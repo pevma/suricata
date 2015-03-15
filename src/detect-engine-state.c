@@ -681,7 +681,7 @@ static int DoInspectItem(ThreadVars *tv,
 
     void *alstate = FlowGetAppState(f);
     if (!StateIsValid(alproto, alstate)) {
-        RULE_PROFILING_END(det_ctx, s, match, p);
+        RULE_PROFILING_END(det_ctx, s, 0, p);
         return -1;
     }
 
@@ -690,7 +690,7 @@ static int DoInspectItem(ThreadVars *tv,
     DetectEngineAppInspectionEngine *engine = app_inspection_engine[FlowGetProtoMapping(f->proto)][alproto][(flags & STREAM_TOSERVER) ? 0 : 1];
     void *inspect_tx = AppLayerParserGetTx(f->proto, alproto, alstate, inspect_tx_id);
     if (inspect_tx == NULL) {
-        RULE_PROFILING_END(det_ctx, s, match, p);
+        RULE_PROFILING_END(det_ctx, s, 0, p);
         return -1;
     }
 
@@ -810,8 +810,6 @@ static int DoInspectFlowRule(ThreadVars *tv,
             }
         }
     }
-    RULE_PROFILING_END(det_ctx, s, match, p);
-
     if (s->sm_lists[DETECT_SM_LIST_AMATCH] != NULL) {
         if (total_matches > 0 && (sm == NULL || inspect_flags & DE_STATE_FLAG_SIG_CANT_MATCH)) {
             if (sm == NULL)
@@ -820,6 +818,7 @@ static int DoInspectFlowRule(ThreadVars *tv,
         }
         det_ctx->de_state_sig_array[item->sid] = DE_STATE_MATCH_NO_NEW_STATE;
     }
+    RULE_PROFILING_END(det_ctx, s, (alert == 1), p);
 
     item->flags |= inspect_flags;
     item->nm = sm;
