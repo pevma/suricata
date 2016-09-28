@@ -138,6 +138,7 @@ TmModuleReceiveErfDagRegister(void)
     tmm_modules[TMM_RECEIVEERFDAG].ThreadInit = ReceiveErfDagThreadInit;
     tmm_modules[TMM_RECEIVEERFDAG].Func = NULL;
     tmm_modules[TMM_RECEIVEERFDAG].PktAcqLoop = ReceiveErfDagLoop;
+    tmm_modules[TMM_RECEIVEERFDAG].PktAcqBreakLoop = NULL;
     tmm_modules[TMM_RECEIVEERFDAG].ThreadExitPrintStats =
         ReceiveErfDagThreadExitStats;
     tmm_modules[TMM_RECEIVEERFDAG].ThreadDeinit = NULL;
@@ -341,7 +342,7 @@ ReceiveErfDagLoop(ThreadVars *tv, void *data, void *slot)
     dtv->slot = s->slot_next;
 
     while (1) {
-        if (suricata_ctl_flags & (SURICATA_STOP | SURICATA_KILL)) {
+        if (suricata_ctl_flags & SURICATA_STOP) {
             SCReturnInt(TM_ECODE_OK);
         }
 

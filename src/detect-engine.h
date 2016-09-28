@@ -75,7 +75,7 @@ void DetectEnginePruneFreeList(void);
 int DetectEngineMoveToFreeList(DetectEngineCtx *de_ctx);
 DetectEngineCtx *DetectEngineReference(DetectEngineCtx *);
 void DetectEngineDeReference(DetectEngineCtx **de_ctx);
-int DetectEngineReload(const char *filename, SCInstance *suri);
+int DetectEngineReload(SCInstance *suri);
 int DetectEngineEnabled(void);
 int DetectEngineMTApply(void);
 int DetectEngineMultiTenantEnabled(void);
@@ -93,6 +93,11 @@ int DetectEngineTentantRegisterVlanId(uint32_t tenant_id, uint16_t vlan_id);
 int DetectEngineTentantUnregisterVlanId(uint32_t tenant_id, uint16_t vlan_id);
 int DetectEngineTentantRegisterPcapFile(uint32_t tenant_id);
 int DetectEngineTentantUnregisterPcapFile(uint32_t tenant_id);
+
+int DetectEngineInspectGenericList(ThreadVars *, const DetectEngineCtx *,
+                                   DetectEngineThreadCtx *, const Signature *,
+                                   Flow *, const uint8_t, void *, void *,
+                                   uint64_t, const int);
 
 /**
  * \brief Registers an app inspection engine.

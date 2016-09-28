@@ -1,4 +1,4 @@
-/* Copyright (C) 2011-2012 Open Information Security Foundation
+/* Copyright (C) 2011-2016 Open Information Security Foundation
  *
  * You can copy, redistribute or modify this Program under the terms of
  * the GNU General Public License version 2 as published by the Free
@@ -18,6 +18,9 @@
 #include "suricata-common.h"
 #include "conf.h"
 #include "util-device.h"
+#include "util-ioctl.h"
+
+#define MAX_DEVNAME 10
 
 /**
  * \file
@@ -34,6 +37,26 @@ static TAILQ_HEAD(, LiveDevice_) live_devices =
 /** if set to 0 when we don't have real devices */
 static int live_devices_stats = 1;
 
+static int LiveSafeDeviceName(const char *devname,
+                              char *newdevname, size_t destlen);
+
+static int g_live_devices_disable_offloading = 1;
+
+void LiveSetOffloadDisable(void)
+{
+    g_live_devices_disable_offloading = 1;
+}
+
+void LiveSetOffloadWarn(void)
+{
+    g_live_devices_disable_offloading = 0;
+}
+
+int LiveGetOffload(void)
+{
+    return g_live_devices_disable_offloading;
+}
+
 /**
  *  \brief Add a pcap device for monitoring
  *
@@ -44,7 +67,7 @@ static int live_devices_stats = 1;
  */
 int LiveRegisterDevice(const char *dev)
 {
-    LiveDevice *pd = SCMalloc(sizeof(LiveDevice));
+    LiveDevice *pd = SCCalloc(1, sizeof(LiveDevice));
     if (unlikely(pd == NULL)) {
         return -1;
     }
@@ -54,6 +77,13 @@ int LiveRegisterDevice(const char *dev)
         SCFree(pd);
         return -1;
     }
+    /* create a short version to be used in thread names */
+    if (strlen(pd->dev) > MAX_DEVNAME) {
+        LiveSafeDeviceName(pd->dev, pd->dev_short, sizeof(pd->dev_short));
+    } else {
+        (void)strlcpy(pd->dev_short, pd->dev, sizeof(pd->dev_short));
+    }
+
     SC_ATOMIC_INIT(pd->pkts);
     SC_ATOMIC_INIT(pd->drop);
     SC_ATOMIC_INIT(pd->invalid_checksums);
@@ -89,7 +119,7 @@ int LiveGetDeviceCount(void)
  *  \retval ptr pointer to the string containing the device
  *  \retval NULL on error
  */
-char *LiveGetDeviceName(int number)
+const char *LiveGetDeviceName(int number)
 {
     int i = 0;
     LiveDevice *pd;
@@ -103,6 +133,62 @@ char *LiveGetDeviceName(int number)
     }
 
     return NULL;
+}
+
+/** \internal
+ *  \brief Shorten a device name that is to long
+ *
+ *  \param device name from config and destination for modified
+ *
+ *  \retval None, is added to destination char *newdevname
+ */
+static int LiveSafeDeviceName(const char *devname, char *newdevname, size_t destlen)
+{
+    size_t devnamelen = strlen(devname);
+
+    /* If we have to shorten the interface name */
+    if (devnamelen > MAX_DEVNAME) {
+
+        /* IF the dest length is over 10 chars long it will not do any
+         * good for the shortening. The shortening is done due to the
+         * max length of pthread names (15 chars) and we use 3 chars
+         * for the threadname indicator eg. "W#-" and one-two chars for
+         * the thread number. And if the destination buffer is under
+         * 6 chars there is no point in shortening it since we must at
+         * least enter two periods (.) into the string.
+         */
+        if ((destlen-1) > 10 || (destlen-1) < 6) {
+            return 1;
+        }
+
+        size_t length;
+        size_t half;
+        size_t spaces;
+
+        half = (destlen-1) / 2;
+
+        /* If the destlen is an even number */
+        if (half * 2 == (destlen-1)) {
+            half = half - 1;
+        }
+
+        spaces = (destlen-1) - (half*2);
+        length = half;
+
+        /* Add the first half to the new dev name */
+        snprintf(newdevname, half+1, "%s", devname);
+
+        /* Add the amount of spaces wanted */
+        for (uint i = half; i < half+spaces; i++) {
+            length = strlcat(newdevname, ".", destlen);
+        }
+
+        snprintf(newdevname+length, half+1, "%s", devname+(devnamelen-half));
+        SCLogInfo("Shortening device name to: %s", newdevname);
+    } else {
+        strlcpy(newdevname, devname, destlen);
+    }
+    return 0;
 }
 
 /**
@@ -134,7 +220,13 @@ LiveDevice *LiveGetDevice(const char *name)
     return NULL;
 }
 
-
+const char *LiveGetShortName(const char *dev)
+{
+    LiveDevice *live_dev = LiveGetDevice(dev);
+    if (live_dev == NULL)
+        return NULL;
+    return live_dev->dev_short;
+}
 
 int LiveBuildDeviceList(const char *runmode)
 {
@@ -156,7 +248,7 @@ int LiveBuildDeviceListCustom(const char *runmode, const char *itemname)
             if ((!strcmp(subchild->name, itemname))) {
                 if (!strcmp(subchild->val, "default"))
                     break;
-                SCLogInfo("Adding %s %s from config file",
+                SCLogConfig("Adding %s %s from config file",
                           itemname, subchild->val);
                 LiveRegisterDevice(subchild->val);
                 i++;
@@ -190,6 +282,9 @@ int LiveDeviceListClean()
                     100 * (SC_ATOMIC_GET(pd->drop) * 1.0) / SC_ATOMIC_GET(pd->pkts),
                     SC_ATOMIC_GET(pd->invalid_checksums));
         }
+
+        RestoreIfaceOffloading(pd);
+
         if (pd->dev)
             SCFree(pd->dev);
         SC_ATOMIC_DESTROY(pd->pkts);
@@ -261,7 +356,7 @@ TmEcode LiveDeviceIfaceList(json_t *cmd, json_t *answer, void *data)
         return TM_ECODE_FAILED;
     }
     TAILQ_FOREACH(pd, &live_devices, next) {
-        json_array_append(jarray, json_string(pd->dev));
+        json_array_append_new(jarray, json_string(pd->dev));
         i++;
     }
 

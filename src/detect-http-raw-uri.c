@@ -67,7 +67,6 @@ void DetectHttpRawUriRegister(void)
     sigmatch_table[DETECT_AL_HTTP_RAW_URI].url = "https://redmine.openinfosecfoundation.org/projects/suricata/wiki/HTTP-keywords#http_uri-and-http_raw_uri";
     sigmatch_table[DETECT_AL_HTTP_RAW_URI].Match = NULL;
     sigmatch_table[DETECT_AL_HTTP_RAW_URI].AppLayerMatch = NULL;
-    sigmatch_table[DETECT_AL_HTTP_RAW_URI].alproto = ALPROTO_HTTP;
     sigmatch_table[DETECT_AL_HTTP_RAW_URI].Setup = DetectHttpRawUriSetup;
     sigmatch_table[DETECT_AL_HTTP_RAW_URI].Free = NULL;
     sigmatch_table[DETECT_AL_HTTP_RAW_URI].RegisterTests = DetectHttpRawUriRegisterTests;
@@ -545,18 +544,18 @@ int DetectHttpRawUriTest18(void)
 static void DetectHttpRawUriRegisterTests (void)
 {
 #ifdef UNITTESTS /* UNITTESTS */
-    UtRegisterTest("DetectHttpRawUriTest01", DetectHttpRawUriTest01, 1);
-    UtRegisterTest("DetectHttpRawUriTest02", DetectHttpRawUriTest02, 1);
-    UtRegisterTest("DetectHttpRawUriTest03", DetectHttpRawUriTest03, 1);
-    UtRegisterTest("DetectHttpRawUriTest04", DetectHttpRawUriTest04, 1);
-    UtRegisterTest("DetectHttpRawUriTest05", DetectHttpRawUriTest05, 1);
-    UtRegisterTest("DetectHttpRawUriTest12", DetectHttpRawUriTest12, 1);
-    UtRegisterTest("DetectHttpRawUriTest13", DetectHttpRawUriTest13, 1);
-    UtRegisterTest("DetectHttpRawUriTest14", DetectHttpRawUriTest14, 1);
-    UtRegisterTest("DetectHttpRawUriTest15", DetectHttpRawUriTest15, 1);
-    UtRegisterTest("DetectHttpRawUriTest16", DetectHttpRawUriTest16, 1);
-    UtRegisterTest("DetectHttpRawUriTest17", DetectHttpRawUriTest17, 1);
-    UtRegisterTest("DetectHttpRawUriTest18", DetectHttpRawUriTest18, 1);
+    UtRegisterTest("DetectHttpRawUriTest01", DetectHttpRawUriTest01);
+    UtRegisterTest("DetectHttpRawUriTest02", DetectHttpRawUriTest02);
+    UtRegisterTest("DetectHttpRawUriTest03", DetectHttpRawUriTest03);
+    UtRegisterTest("DetectHttpRawUriTest04", DetectHttpRawUriTest04);
+    UtRegisterTest("DetectHttpRawUriTest05", DetectHttpRawUriTest05);
+    UtRegisterTest("DetectHttpRawUriTest12", DetectHttpRawUriTest12);
+    UtRegisterTest("DetectHttpRawUriTest13", DetectHttpRawUriTest13);
+    UtRegisterTest("DetectHttpRawUriTest14", DetectHttpRawUriTest14);
+    UtRegisterTest("DetectHttpRawUriTest15", DetectHttpRawUriTest15);
+    UtRegisterTest("DetectHttpRawUriTest16", DetectHttpRawUriTest16);
+    UtRegisterTest("DetectHttpRawUriTest17", DetectHttpRawUriTest17);
+    UtRegisterTest("DetectHttpRawUriTest18", DetectHttpRawUriTest18);
 #endif /* UNITTESTS */
 
     return;

@@ -579,7 +579,10 @@ int UnixMain(UnixCommand * this)
         return 0;
     }
 
-    if (suricata_ctl_flags & (SURICATA_STOP | SURICATA_KILL)) {
+    if (suricata_ctl_flags & SURICATA_STOP) {
+        TAILQ_FOREACH_SAFE(uclient, &this->clients, next, tclient) {
+            UnixCommandClose(this, uclient->fd);
+        }
         return 1;
     }
 
@@ -659,7 +662,7 @@ TmEcode UnixManagerVersionCommand(json_t *cmd,
     SCEnter();
     json_object_set_new(server_msg, "message", json_string(
 #ifdef REVISION
-                        PROG_VER  xstr(REVISION)
+                        PROG_VER " (rev "  xstr(REVISION) ")"
 #elif defined RELEASE
                         PROG_VER " RELEASE"
 #else
@@ -763,7 +766,7 @@ TmEcode UnixManagerListCommand(json_t *cmd,
     }
 
     TAILQ_FOREACH(lcmd, &gcmd->commands, next) {
-        json_array_append(jarray, json_string(lcmd->name));
+        json_array_append_new(jarray, json_string(lcmd->name));
         i++;
     }
 
@@ -991,7 +994,7 @@ void UnixManagerThreadSpawn(int mode)
     SCCtrlCondInit(&unix_manager_ctrl_cond, NULL);
     SCCtrlMutexInit(&unix_manager_ctrl_mutex, NULL);
 
-    tv_unixmgr = TmThreadCreateCmdThreadByName("UnixManagerThread",
+    tv_unixmgr = TmThreadCreateCmdThreadByName(thread_name_unix_socket,
                                           "UnixManager", 0);
 
     if (tv_unixmgr == NULL) {

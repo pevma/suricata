@@ -27,6 +27,7 @@
 #include "decode-events.h"
 #include "util-decode-mime.h"
 #include "queue.h"
+#include "util-streaming-buffer.h"
 
 enum {
     SMTP_DECODER_EVENT_INVALID_REPLY,
@@ -49,6 +50,10 @@ enum {
     SMTP_DECODER_EVENT_MIME_LONG_HEADER_NAME,
     SMTP_DECODER_EVENT_MIME_LONG_HEADER_VALUE,
     SMTP_DECODER_EVENT_MIME_BOUNDARY_TOO_LONG,
+
+    /* Invalid behavior or content */
+    SMTP_DECODER_EVENT_DUPLICATE_FIELDS,
+    SMTP_DECODER_EVENT_UNPARSABLE_CONTENT,
 };
 
 typedef struct SMTPString_ {
@@ -62,6 +67,8 @@ typedef struct SMTPTransaction_ {
     /** id of this tx, starting at 0 */
     uint64_t tx_id;
     int done;
+    /** indicates loggers done logging */
+    uint32_t logged;
     /** the first message contained in the session */
     MimeDecEntity *msg_head;
     /** the last message contained in the session */
@@ -88,6 +95,8 @@ typedef struct SMTPConfig {
     uint32_t content_limit;
     uint32_t content_inspect_min_size;
     uint32_t content_inspect_window;
+
+    StreamingBufferConfig sbcfg;
 } SMTPConfig;
 
 typedef struct SMTPState_ {
@@ -106,7 +115,6 @@ typedef struct SMTPState_ {
     /** length of the line in current_line.  Doesn't include the delimiter */
     int32_t current_line_len;
     uint8_t current_line_delimiter_len;
-    PatternMatcherQueue *thread_local_data;
 
     /** used to indicate if the current_line buffer is a malloced buffer.  We
      * use a malloced buffer, if a line is fragmented */
@@ -160,6 +168,7 @@ extern SMTPConfig smtp_config;
 int SMTPProcessDataChunk(const uint8_t *chunk, uint32_t len, MimeDecParseState *state);
 void *SMTPStateAlloc(void);
 void RegisterSMTPParsers(void);
+void SMTPParserCleanup(void);
 void SMTPParserRegisterTests(void);
 
 #endif /* __APP_LAYER_SMTP_H__ */

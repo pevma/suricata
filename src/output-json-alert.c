@@ -35,10 +35,10 @@
 #include "threadvars.h"
 #include "util-debug.h"
 
+#include "util-misc.h"
 #include "util-unittest.h"
 #include "util-unittest-helper.h"
 
-#include "detect.h"
 #include "detect-parse.h"
 #include "detect-engine.h"
 #include "detect-engine-mpm.h"
@@ -70,19 +70,21 @@
 
 #ifdef HAVE_LIBJANSSON
 
-#define LOG_JSON_PAYLOAD 1
-#define LOG_JSON_PACKET 2
-#define LOG_JSON_PAYLOAD_BASE64 4
-#define LOG_JSON_HTTP 8
-#define LOG_JSON_TLS 16
-#define LOG_JSON_SSH 32
-#define LOG_JSON_SMTP 64
+#define LOG_JSON_PAYLOAD        0x01
+#define LOG_JSON_PACKET         0x02
+#define LOG_JSON_PAYLOAD_BASE64 0x04
+#define LOG_JSON_HTTP           0x08
+#define LOG_JSON_TLS            0x10
+#define LOG_JSON_SSH            0x20
+#define LOG_JSON_SMTP           0x40
+#define LOG_JSON_TAGGED_PACKETS 0x80
 
 #define JSON_STREAM_BUFFER_SIZE 4096
 
 typedef struct AlertJsonOutputCtx_ {
     LogFileCtx* file_ctx;
     uint8_t flags;
+    uint32_t payload_buffer_size;
     HttpXFFCfg *xff_cfg;
 } AlertJsonOutputCtx;
 
@@ -174,6 +176,23 @@ void AlertJsonHeader(const Packet *p, const PacketAlert *pa, json_t *js)
     json_object_set_new(js, "alert", ajs);
 }
 
+static void AlertJsonPacket(const Packet *p, json_t *js)
+{
+    unsigned long len = GET_PKT_LEN(p) * 2;
+    uint8_t encoded_packet[len];
+    Base64Encode((unsigned char*) GET_PKT_DATA(p), GET_PKT_LEN(p),
+        encoded_packet, &len);
+    json_object_set_new(js, "packet", json_string((char *)encoded_packet));
+
+    /* Create packet info. */
+    json_t *packetinfo_js = json_object();
+    if (unlikely(packetinfo_js == NULL)) {
+        return;
+    }
+    json_object_set_new(packetinfo_js, "linktype", json_integer(p->datalink));
+    json_object_set_new(js, "packet_info", packetinfo_js);
+}
+
 static int AlertJson(ThreadVars *tv, JsonAlertLogThread *aft, const Packet *p)
 {
     MemBuffer *payload = aft->payload_buffer;
@@ -182,7 +201,7 @@ static int AlertJson(ThreadVars *tv, JsonAlertLogThread *aft, const Packet *p)
 
     int i;
 
-    if (p->alerts.cnt == 0)
+    if (p->alerts.cnt == 0 && !(p->flags & PKT_HAS_TAG))
         return TM_ECODE_OK;
 
     json_t *js = CreateJSONHeader((Packet *)p, 0, "alert");
@@ -202,7 +221,6 @@ static int AlertJson(ThreadVars *tv, JsonAlertLogThread *aft, const Packet *p)
 
         if (json_output_ctx->flags & LOG_JSON_HTTP) {
             if (p->flow != NULL) {
-                FLOWLOCK_RDLOCK(p->flow);
                 uint16_t proto = FlowGetAppProtocol(p->flow);
 
                 /* http alert */
@@ -211,40 +229,31 @@ static int AlertJson(ThreadVars *tv, JsonAlertLogThread *aft, const Packet *p)
                     if (hjs)
                         json_object_set_new(js, "http", hjs);
                 }
-
-                FLOWLOCK_UNLOCK(p->flow);
             }
         }
 
         if (json_output_ctx->flags & LOG_JSON_TLS) {
             if (p->flow != NULL) {
-                FLOWLOCK_RDLOCK(p->flow);
                 uint16_t proto = FlowGetAppProtocol(p->flow);
 
                 /* http alert */
                 if (proto == ALPROTO_TLS)
                     AlertJsonTls(p->flow, js);
-
-                FLOWLOCK_UNLOCK(p->flow);
             }
         }
 
         if (json_output_ctx->flags & LOG_JSON_SSH) {
             if (p->flow != NULL) {
-                FLOWLOCK_RDLOCK(p->flow);
                 uint16_t proto = FlowGetAppProtocol(p->flow);
 
                 /* http alert */
                 if (proto == ALPROTO_SSH)
                     AlertJsonSsh(p->flow, js);
-
-                FLOWLOCK_UNLOCK(p->flow);
             }
         }
 
         if (json_output_ctx->flags & LOG_JSON_SMTP) {
             if (p->flow != NULL) {
-                FLOWLOCK_RDLOCK(p->flow);
                 uint16_t proto = FlowGetAppProtocol(p->flow);
 
                 /* http alert */
@@ -257,8 +266,6 @@ static int AlertJson(ThreadVars *tv, JsonAlertLogThread *aft, const Packet *p)
                     if (hjs)
                         json_object_set_new(js, "email", hjs);
                 }
-
-                FLOWLOCK_UNLOCK(p->flow);
             }
         }
 
@@ -285,7 +292,7 @@ static int AlertJson(ThreadVars *tv, JsonAlertLogThread *aft, const Packet *p)
                                     (void *)payload);
 
                 if (json_output_ctx->flags & LOG_JSON_PAYLOAD_BASE64) {
-                    unsigned long len = JSON_STREAM_BUFFER_SIZE * 2;
+                    unsigned long len = json_output_ctx->payload_buffer_size * 2;
                     uint8_t encoded[len];
                     Base64Encode(payload->buffer, payload->offset, encoded, &len);
                     json_object_set_new(js, "payload", json_string((char *)encoded));
@@ -324,10 +331,7 @@ static int AlertJson(ThreadVars *tv, JsonAlertLogThread *aft, const Packet *p)
 
         /* base64-encoded full packet */
         if (json_output_ctx->flags & LOG_JSON_PACKET) {
-            unsigned long len = GET_PKT_LEN(p) * 2;
-            uint8_t encoded_packet[len];
-            Base64Encode((unsigned char*) GET_PKT_DATA(p), GET_PKT_LEN(p), encoded_packet, &len);
-            json_object_set_new(js, "packet", json_string((char *)encoded_packet));
+            AlertJsonPacket(p, js);
         }
 
         HttpXFFCfg *xff_cfg = json_output_ctx->xff_cfg;
@@ -337,7 +341,6 @@ static int AlertJson(ThreadVars *tv, JsonAlertLogThread *aft, const Packet *p)
             int have_xff_ip = 0;
             char buffer[XFF_MAXLEN];
 
-            FLOWLOCK_RDLOCK(p->flow);
             if (FlowGetAppProtocol(p->flow) == ALPROTO_HTTP) {
                 if (pa->flags & PACKET_ALERT_FLAG_TX) {
                     have_xff_ip = HttpXFFGetIPFromTx(p, pa->tx_id, xff_cfg, buffer, XFF_MAXLEN);
@@ -345,7 +348,6 @@ static int AlertJson(ThreadVars *tv, JsonAlertLogThread *aft, const Packet *p)
                     have_xff_ip = HttpXFFGetIP(p, xff_cfg, buffer, XFF_MAXLEN);
                 }
             }
-            FLOWLOCK_UNLOCK(p->flow);
 
             if (have_xff_ip) {
                 if (xff_cfg->flags & XFF_EXTRADATA) {
@@ -366,6 +368,17 @@ static int AlertJson(ThreadVars *tv, JsonAlertLogThread *aft, const Packet *p)
     }
     json_object_clear(js);
     json_decref(js);
+
+    if ((p->flags & PKT_HAS_TAG) && (json_output_ctx->flags &
+            LOG_JSON_TAGGED_PACKETS)) {
+        MemBufferReset(aft->json_buffer);
+        json_t *packetjs = CreateJSONHeader((Packet *)p, 0, "packet");
+        if (unlikely(packetjs != NULL)) {
+            AlertJsonPacket(p, packetjs);
+            OutputJSONBuffer(packetjs, aft->file_ctx, &aft->json_buffer);
+            json_decref(packetjs);
+        }
+    }
 
     return TM_ECODE_OK;
 }
@@ -456,7 +469,10 @@ static int JsonAlertLogger(ThreadVars *tv, void *thread_data, const Packet *p)
 
 static int JsonAlertLogCondition(ThreadVars *tv, const Packet *p)
 {
-    return (p->alerts.cnt ? TRUE : FALSE);
+    if (p->alerts.cnt || (p->flags & PKT_HAS_TAG)) {
+        return TRUE;
+    }
+    return FALSE;
 }
 
 #define OUTPUT_BUFFER_SIZE 65535
@@ -468,7 +484,7 @@ static TmEcode JsonAlertLogThreadInit(ThreadVars *t, void *initdata, void **data
     memset(aft, 0, sizeof(JsonAlertLogThread));
     if(initdata == NULL)
     {
-        SCLogDebug("Error getting context for AlertFastLog.  \"initdata\" argument NULL");
+        SCLogDebug("Error getting context for EveLogAlert.  \"initdata\" argument NULL");
         SCFree(aft);
         return TM_ECODE_FAILED;
     }
@@ -479,17 +495,17 @@ static TmEcode JsonAlertLogThreadInit(ThreadVars *t, void *initdata, void **data
         return TM_ECODE_FAILED;
     }
 
-    aft->payload_buffer = MemBufferCreateNew(JSON_STREAM_BUFFER_SIZE);
-    if (aft->payload_buffer == NULL) {
-        SCFree(aft);
-        return TM_ECODE_FAILED;
-    }
-
     /** Use the Output Context (file pointer and mutex) */
     AlertJsonOutputCtx *json_output_ctx = ((OutputCtx *)initdata)->data;
     aft->file_ctx = json_output_ctx->file_ctx;
     aft->json_output_ctx = json_output_ctx;
 
+    aft->payload_buffer = MemBufferCreateNew(json_output_ctx->payload_buffer_size);
+    if (aft->payload_buffer == NULL) {
+        SCFree(aft);
+        return TM_ECODE_FAILED;
+    }
+    
     *data = (void *)aft;
     return TM_ECODE_OK;
 }
@@ -556,14 +572,18 @@ static void XffSetup(AlertJsonOutputCtx *json_output_ctx, ConfNode *conf)
 
     json_output_ctx->xff_cfg = xff_cfg;
 
+    uint32_t payload_buffer_size = JSON_STREAM_BUFFER_SIZE;
+
     if (conf != NULL) {
         const char *payload = ConfNodeLookupChildValue(conf, "payload");
+        const char *payload_buffer_value = ConfNodeLookupChildValue(conf, "payload-buffer-size");
         const char *packet  = ConfNodeLookupChildValue(conf, "packet");
         const char *payload_printable = ConfNodeLookupChildValue(conf, "payload-printable");
         const char *http = ConfNodeLookupChildValue(conf, "http");
         const char *tls = ConfNodeLookupChildValue(conf, "tls");
         const char *ssh = ConfNodeLookupChildValue(conf, "ssh");
         const char *smtp = ConfNodeLookupChildValue(conf, "smtp");
+        const char *tagged_packets = ConfNodeLookupChildValue(conf, "tagged-packets");
 
         if (ssh != NULL) {
             if (ConfValIsTrue(ssh)) {
@@ -595,12 +615,29 @@ static void XffSetup(AlertJsonOutputCtx *json_output_ctx, ConfNode *conf)
                 json_output_ctx->flags |= LOG_JSON_PAYLOAD_BASE64;
             }
         }
+        if (payload_buffer_value != NULL) {
+            uint32_t value;
+            if (ParseSizeStringU32(payload_buffer_value, &value) < 0) {
+                SCLogError(SC_ERR_ALERT_PAYLOAD_BUFFER, "Error parsing "
+                           "payload-buffer-size - %s. Killing engine",
+                           payload_buffer_value);
+                exit(EXIT_FAILURE);
+            } else {
+                payload_buffer_size = value;
+            }
+        }
         if (packet != NULL) {
             if (ConfValIsTrue(packet)) {
                 json_output_ctx->flags |= LOG_JSON_PACKET;
             }
         }
+        if (tagged_packets != NULL) {
+            if (ConfValIsTrue(tagged_packets)) {
+                json_output_ctx->flags |= LOG_JSON_TAGGED_PACKETS;
+            }
+        }
 
+	json_output_ctx->payload_buffer_size = payload_buffer_size;
         HttpXFFGetCfg(conf, xff_cfg);
     }
 }
@@ -688,32 +725,22 @@ error:
     return NULL;
 }
 
-void TmModuleJsonAlertLogRegister (void)
+void JsonAlertLogRegister (void)
 {
-    tmm_modules[TMM_JSONALERTLOG].name = MODULE_NAME;
-    tmm_modules[TMM_JSONALERTLOG].ThreadInit = JsonAlertLogThreadInit;
-    tmm_modules[TMM_JSONALERTLOG].ThreadDeinit = JsonAlertLogThreadDeinit;
-    tmm_modules[TMM_JSONALERTLOG].cap_flags = 0;
-    tmm_modules[TMM_JSONALERTLOG].flags = TM_FLAG_LOGAPI_TM;
-
-    OutputRegisterPacketModule(MODULE_NAME, "alert-json-log",
-            JsonAlertLogInitCtx, JsonAlertLogger, JsonAlertLogCondition);
-    OutputRegisterPacketSubModule("eve-log", MODULE_NAME, "eve-log.alert",
-            JsonAlertLogInitCtxSub, JsonAlertLogger, JsonAlertLogCondition);
+    OutputRegisterPacketModule(LOGGER_JSON_ALERT, MODULE_NAME, "alert-json-log",
+        JsonAlertLogInitCtx, JsonAlertLogger, JsonAlertLogCondition,
+        JsonAlertLogThreadInit, JsonAlertLogThreadDeinit, NULL);
+    OutputRegisterPacketSubModule(LOGGER_JSON_ALERT, "eve-log", MODULE_NAME,
+        "eve-log.alert", JsonAlertLogInitCtxSub, JsonAlertLogger,
+        JsonAlertLogCondition, JsonAlertLogThreadInit, JsonAlertLogThreadDeinit,
+        NULL);
 }
 
 #else
 
-static TmEcode OutputJsonThreadInit(ThreadVars *t, void *initdata, void **data)
+void JsonAlertLogRegister (void)
 {
-    SCLogInfo("Can't init JSON output - JSON support was disabled during build.");
-    return TM_ECODE_FAILED;
-}
-
-void TmModuleJsonAlertLogRegister (void)
-{
-    tmm_modules[TMM_JSONALERTLOG].name = MODULE_NAME;
-    tmm_modules[TMM_JSONALERTLOG].ThreadInit = OutputJsonThreadInit;
+    SCLogInfo("Can't register JSON output - JSON support was disabled during build.");
 }
 
 #endif

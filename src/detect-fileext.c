@@ -66,7 +66,6 @@ void DetectFileextRegister(void)
     sigmatch_table[DETECT_FILEEXT].desc = "match on the extension of a file name";
     sigmatch_table[DETECT_FILEEXT].url = "https://redmine.openinfosecfoundation.org/projects/suricata/wiki/File-keywords#fileext";
     sigmatch_table[DETECT_FILEEXT].FileMatch = DetectFileextMatch;
-    sigmatch_table[DETECT_FILEEXT].alproto = ALPROTO_HTTP;
     sigmatch_table[DETECT_FILEEXT].Setup = DetectFileextSetup;
     sigmatch_table[DETECT_FILEEXT].Free  = DetectFileextFree;
     sigmatch_table[DETECT_FILEEXT].RegisterTests = DetectFileextRegisterTests;
@@ -211,15 +210,6 @@ static int DetectFileextSetup (DetectEngineCtx *de_ctx, Signature *s, char *str)
 
     SigMatchAppendSMToList(s, sm, DETECT_SM_LIST_FILEMATCH);
 
-    if (s->alproto != ALPROTO_HTTP && s->alproto != ALPROTO_SMTP) {
-        SCLogError(SC_ERR_CONFLICTING_RULE_KEYWORDS, "rule contains conflicting keywords.");
-        goto error;
-    }
-
-    if (s->alproto == ALPROTO_HTTP) {
-        AppLayerHtpNeedFileInspection();
-    }
-
     s->file_flags |= (FILE_SIG_NEED_FILE|FILE_SIG_NEED_FILENAME);
     return 0;
 
@@ -308,8 +298,8 @@ int DetectFileextTestParse03 (void)
 void DetectFileextRegisterTests(void)
 {
 #ifdef UNITTESTS /* UNITTESTS */
-    UtRegisterTest("DetectFileextTestParse01", DetectFileextTestParse01, 1);
-    UtRegisterTest("DetectFileextTestParse02", DetectFileextTestParse02, 1);
-    UtRegisterTest("DetectFileextTestParse03", DetectFileextTestParse03, 1);
+    UtRegisterTest("DetectFileextTestParse01", DetectFileextTestParse01);
+    UtRegisterTest("DetectFileextTestParse02", DetectFileextTestParse02);
+    UtRegisterTest("DetectFileextTestParse03", DetectFileextTestParse03);
 #endif /* UNITTESTS */
 }

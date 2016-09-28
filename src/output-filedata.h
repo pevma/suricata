@@ -34,16 +34,19 @@
 
 /** filedata logger function pointer type */
 typedef int (*FiledataLogger)(ThreadVars *, void *thread_data, const Packet *,
-        const File *, const FileData *, uint8_t);
+        const File *, const uint8_t *, uint32_t, uint8_t);
 
 /** packet logger condition function pointer type,
  *  must return true for packets that should be logged
  */
 //typedef int (*TxLogCondition)(ThreadVars *, const Packet *);
 
-int OutputRegisterFiledataLogger(const char *name, FiledataLogger LogFunc, OutputCtx *);
+int OutputRegisterFiledataLogger(LoggerId id, const char *name,
+    FiledataLogger LogFunc, OutputCtx *, ThreadInitFunc ThreadInit,
+    ThreadDeinitFunc ThreadDeinit,
+    ThreadExitPrintStatsFunc ThreadExitPrintStats);
 
-void TmModuleFiledataLoggerRegister (void);
+void OutputFiledataLoggerRegister(void);
 
 void OutputFiledataShutdown(void);
 

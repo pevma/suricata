@@ -47,7 +47,7 @@
 #include "util-unittest-helper.h"
 #include "stream-tcp.h"
 
-#define DETECT_DCE_OPNUM_PCRE_PARSE_ARGS "^\\s*([0-9]{1,5}(\\s*-\\s*[0-9]{1,5}\\s*)?)(,\\s*[0-9]{1,5}(\\s*-\\s*[0-9]{1,5})?\\s*)*$"
+#define PARSE_REGEX "^\\s*([0-9]{1,5}(\\s*-\\s*[0-9]{1,5}\\s*)?)(,\\s*[0-9]{1,5}(\\s*-\\s*[0-9]{1,5})?\\s*)*$"
 
 static pcre *parse_regex = NULL;
 static pcre_extra *parse_regex_study = NULL;
@@ -62,12 +62,7 @@ void DetectDceOpnumFree(void *);
  */
 void DetectDceOpnumRegister(void)
 {
-    const char *eb;
-    int eo;
-    int opts = 0;
-
     sigmatch_table[DETECT_DCE_OPNUM].name = "dce_opnum";
-    sigmatch_table[DETECT_DCE_OPNUM].alproto = ALPROTO_DCERPC;
     sigmatch_table[DETECT_DCE_OPNUM].Match = NULL;
     sigmatch_table[DETECT_DCE_OPNUM].AppLayerMatch = DetectDceOpnumMatch;
     sigmatch_table[DETECT_DCE_OPNUM].Setup = DetectDceOpnumSetup;
@@ -76,25 +71,7 @@ void DetectDceOpnumRegister(void)
 
     sigmatch_table[DETECT_DCE_OPNUM].flags |= SIGMATCH_PAYLOAD;
 
-    parse_regex = pcre_compile(DETECT_DCE_OPNUM_PCRE_PARSE_ARGS, opts, &eb,
-                               &eo, NULL);
-    if (parse_regex == NULL) {
-        SCLogError(SC_ERR_PCRE_COMPILE, "pcre compile of \"%s\" failed at offset %" PRId32 ": %s",
-                   DETECT_DCE_OPNUM_PCRE_PARSE_ARGS, eo, eb);
-        goto error;
-    }
-
-    parse_regex_study = pcre_study(parse_regex, 0, &eb);
-    if (eb != NULL) {
-        SCLogError(SC_ERR_PCRE_STUDY, "pcre study failed: %s", eb);
-        goto error;
-    }
-
-    return;
-
- error:
-    /* we need to handle error?! */
-    return;
+    DetectSetupParseRegexes(PARSE_REGEX, &parse_regex, &parse_regex_study);
 }
 
 /**
@@ -328,12 +305,12 @@ static int DetectDceOpnumSetup(DetectEngineCtx *de_ctx, Signature *s, char *arg)
     sm->type = DETECT_DCE_OPNUM;
     sm->ctx = (void *)dod;
 
-    SigMatchAppendSMToList(s, sm, DETECT_SM_LIST_AMATCH);
-
     if (s->alproto != ALPROTO_UNKNOWN && s->alproto != ALPROTO_DCERPC) {
         SCLogError(SC_ERR_CONFLICTING_RULE_KEYWORDS, "rule contains conflicting keywords.");
         goto error;
     }
+
+    SigMatchAppendSMToList(s, sm, DETECT_SM_LIST_AMATCH);
 
     s->alproto = ALPROTO_DCERPC;
     /* Flagged the signature as to inspect the app layer data */
@@ -1183,15 +1160,16 @@ static int DetectDceOpnumTestParse08(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&th_v, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOSERVER | STREAM_START,
-                            dcerpc_bind, dcerpc_bind_len);
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOSERVER | STREAM_START, dcerpc_bind,
+                            dcerpc_bind_len);
     if (r != 0) {
         SCLogDebug("AppLayerParse for dcerpc failed.  Returned %" PRId32, r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     dcerpc_state = f.alstate;
     if (dcerpc_state == NULL) {
@@ -1199,25 +1177,27 @@ static int DetectDceOpnumTestParse08(void)
         goto end;
     }
 
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOCLIENT,
-                            dcerpc_bindack, dcerpc_bindack_len);
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOCLIENT, dcerpc_bindack,
+                            dcerpc_bindack_len);
     if (r != 0) {
         SCLogDebug("AppLayerParse for dcerpc failed.  Returned %" PRId32, r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOSERVER | STREAM_EOF,
-                            dcerpc_request, dcerpc_request_len);
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOSERVER | STREAM_EOF, dcerpc_request,
+                            dcerpc_request_len);
     if (r != 0) {
         SCLogDebug("AppLayerParse for dcerpc failed.  Returned %" PRId32, r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     dcerpc_state = f.alstate;
     if (dcerpc_state == NULL) {
@@ -1722,15 +1702,16 @@ static int DetectDceOpnumTestParse09(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&th_v, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOSERVER | STREAM_START,
-                            dcerpc_request, dcerpc_request_len);
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOSERVER | STREAM_START, dcerpc_request,
+                            dcerpc_request_len);
     if (r != 0) {
         SCLogDebug("AppLayerParse for dcerpc failed.  Returned %" PRId32, r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     dcerpc_state = f.alstate;
     if (dcerpc_state == NULL) {
@@ -2927,15 +2908,15 @@ void DetectDceOpnumRegisterTests(void)
 {
 
 #ifdef UNITTESTS
-    UtRegisterTest("DetectDceOpnumTestParse01", DetectDceOpnumTestParse01, 1);
-    UtRegisterTest("DetectDceOpnumTestParse02", DetectDceOpnumTestParse02, 1);
-    UtRegisterTest("DetectDceOpnumTestParse03", DetectDceOpnumTestParse03, 1);
-    UtRegisterTest("DetectDceOpnumTestParse04", DetectDceOpnumTestParse04, 1);
-    UtRegisterTest("DetectDceOpnumTestParse05", DetectDceOpnumTestParse05, 1);
-    UtRegisterTest("DetectDceOpnumTestParse06", DetectDceOpnumTestParse06, 1);
-    UtRegisterTest("DetectDceOpnumTestParse07", DetectDceOpnumTestParse07, 1);
-    UtRegisterTest("DetectDceOpnumTestParse08", DetectDceOpnumTestParse08, 1);
-    UtRegisterTest("DetectDceOpnumTestParse09", DetectDceOpnumTestParse09, 1);
+    UtRegisterTest("DetectDceOpnumTestParse01", DetectDceOpnumTestParse01);
+    UtRegisterTest("DetectDceOpnumTestParse02", DetectDceOpnumTestParse02);
+    UtRegisterTest("DetectDceOpnumTestParse03", DetectDceOpnumTestParse03);
+    UtRegisterTest("DetectDceOpnumTestParse04", DetectDceOpnumTestParse04);
+    UtRegisterTest("DetectDceOpnumTestParse05", DetectDceOpnumTestParse05);
+    UtRegisterTest("DetectDceOpnumTestParse06", DetectDceOpnumTestParse06);
+    UtRegisterTest("DetectDceOpnumTestParse07", DetectDceOpnumTestParse07);
+    UtRegisterTest("DetectDceOpnumTestParse08", DetectDceOpnumTestParse08);
+    UtRegisterTest("DetectDceOpnumTestParse09", DetectDceOpnumTestParse09);
     /* Disabled because of bug_753.  Would be enabled, once we rewrite
      * dce parser */
 #if 0

@@ -21,7 +21,20 @@
  * \author Eric Leblond <eleblond@edenwall.com>
  */
 
+#include "util-device.h"
+
 int GetIfaceMTU(const char *pcap_dev);
 int GetIfaceMaxPacketSize(const char *pcap_dev);
-int GetIfaceOffloading(const char *pcap_dev);
+int GetIfaceOffloading(const char *dev, int csum, int other);
 int GetIfaceRSSQueuesNum(const char *pcap_dev);
+#ifdef SIOCGIFFLAGS
+int GetIfaceFlags(const char *ifname);
+#endif
+#ifdef SIOCSIFFLAGS
+int SetIfaceFlags(const char *ifname, int flags);
+#endif
+#ifdef SIOCGIFCAP
+int GetIfaceCaps(const char *ifname);
+#endif
+int DisableIfaceOffloading(LiveDevice *dev, int csum, int other);
+void RestoreIfaceOffloading(LiveDevice *dev);

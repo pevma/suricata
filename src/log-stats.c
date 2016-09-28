@@ -90,17 +90,17 @@ int LogStatsLogger(ThreadVars *tv, void *thread_data, const StatsTable *st)
     int days = in_hours / 24;
 
     MemBufferWriteString(aft->buffer, "----------------------------------------------"
-            "---------------------\n");
+            "--------------------------------------\n");
     MemBufferWriteString(aft->buffer, "Date: %" PRId32 "/%" PRId32 "/%04d -- "
             "%02d:%02d:%02d (uptime: %"PRId32"d, %02dh %02dm %02ds)\n",
             tms->tm_mon + 1, tms->tm_mday, tms->tm_year + 1900, tms->tm_hour,
             tms->tm_min, tms->tm_sec, days, hours, min, sec);
     MemBufferWriteString(aft->buffer, "----------------------------------------------"
-            "---------------------\n");
-    MemBufferWriteString(aft->buffer, "%-25s | %-25s | %-s\n", "Counter", "TM Name",
+            "--------------------------------------\n");
+    MemBufferWriteString(aft->buffer, "%-42s | %-25s | %-s\n", "Counter", "TM Name",
             "Value");
     MemBufferWriteString(aft->buffer, "----------------------------------------------"
-            "---------------------\n");
+            "--------------------------------------\n");
 
     /* global stats */
     uint32_t u = 0;
@@ -112,8 +112,8 @@ int LogStatsLogger(ThreadVars *tv, void *thread_data, const StatsTable *st)
             if (!(aft->statslog_ctx->flags & LOG_STATS_NULLS) && st->stats[u].value == 0)
                 continue;
 
-            char line[1024];
-            size_t len = snprintf(line, sizeof(line), "%-25s | %-25s | %-" PRIu64 "\n",
+            char line[256];
+            size_t len = snprintf(line, sizeof(line), "%-42s | %-25s | %-" PRIu64 "\n",
                     st->stats[u].name, st->stats[u].tm_name, st->stats[u].value);
 
             /* since we can have many threads, the buffer might not be big enough.
@@ -138,8 +138,11 @@ int LogStatsLogger(ThreadVars *tv, void *thread_data, const StatsTable *st)
                 if (st->tstats[u].name == NULL)
                     continue;
 
-                char line[1024];
-                size_t len = snprintf(line, sizeof(line), "%-25s | %-25s | %-" PRIu64 "\n",
+                if (!(aft->statslog_ctx->flags & LOG_STATS_NULLS) && st->tstats[u].value == 0)
+                    continue;
+
+                char line[256];
+                size_t len = snprintf(line, sizeof(line), "%-42s | %-25s | %-" PRIu64 "\n",
                         st->tstats[u].name, st->tstats[u].tm_name, st->tstats[u].value);
 
                 /* since we can have many threads, the buffer might not be big enough.
@@ -172,7 +175,7 @@ TmEcode LogStatsLogThreadInit(ThreadVars *t, void *initdata, void **data)
 
     if(initdata == NULL)
     {
-        SCLogDebug("Error getting context for HTTPLog.  \"initdata\" argument NULL");
+        SCLogDebug("Error getting context for LogStats.  \"initdata\" argument NULL");
         SCFree(aft);
         return TM_ECODE_FAILED;
     }
@@ -221,7 +224,7 @@ OutputCtx *LogStatsLogInitCtx(ConfNode *conf)
 {
     LogFileCtx *file_ctx = LogFileNewCtx();
     if (file_ctx == NULL) {
-        SCLogError(SC_ERR_HTTP_LOG_GENERIC, "couldn't create new file_ctx");
+        SCLogError(SC_ERR_STATS_LOG_GENERIC, "couldn't create new file_ctx");
         return NULL;
     }
 
@@ -291,15 +294,9 @@ static void LogStatsLogDeInitCtx(OutputCtx *output_ctx)
     SCFree(output_ctx);
 }
 
-void TmModuleLogStatsLogRegister (void)
+void LogStatsLogRegister (void)
 {
-    tmm_modules[TMM_LOGSTATSLOG].name = MODULE_NAME;
-    tmm_modules[TMM_LOGSTATSLOG].ThreadInit = LogStatsLogThreadInit;
-    tmm_modules[TMM_LOGSTATSLOG].ThreadExitPrintStats = LogStatsLogExitPrintStats;
-    tmm_modules[TMM_LOGSTATSLOG].ThreadDeinit = LogStatsLogThreadDeinit;
-    tmm_modules[TMM_LOGSTATSLOG].RegisterTests = NULL;
-    tmm_modules[TMM_LOGSTATSLOG].cap_flags = 0;
-    tmm_modules[TMM_LOGSTATSLOG].flags = TM_FLAG_LOGAPI_TM;
-
-    OutputRegisterStatsModule(MODULE_NAME, "stats", LogStatsLogInitCtx, LogStatsLogger);
+    OutputRegisterStatsModule(LOGGER_STATS, MODULE_NAME, "stats",
+        LogStatsLogInitCtx, LogStatsLogger, LogStatsLogThreadInit,
+        LogStatsLogThreadDeinit, LogStatsLogExitPrintStats);
 }

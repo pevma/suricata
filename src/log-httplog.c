@@ -63,18 +63,11 @@ static void LogHttpLogDeInitCtx(OutputCtx *);
 
 int LogHttpLogger(ThreadVars *tv, void *thread_data, const Packet *, Flow *f, void *state, void *tx, uint64_t tx_id);
 
-void TmModuleLogHttpLogRegister (void)
+void LogHttpLogRegister (void)
 {
-    tmm_modules[TMM_LOGHTTPLOG].name = MODULE_NAME;
-    tmm_modules[TMM_LOGHTTPLOG].ThreadInit = LogHttpLogThreadInit;
-    tmm_modules[TMM_LOGHTTPLOG].ThreadExitPrintStats = LogHttpLogExitPrintStats;
-    tmm_modules[TMM_LOGHTTPLOG].ThreadDeinit = LogHttpLogThreadDeinit;
-    tmm_modules[TMM_LOGHTTPLOG].RegisterTests = NULL;
-    tmm_modules[TMM_LOGHTTPLOG].cap_flags = 0;
-    tmm_modules[TMM_LOGHTTPLOG].flags = TM_FLAG_LOGAPI_TM;
-
-    OutputRegisterTxModule(MODULE_NAME, "http-log", LogHttpLogInitCtx,
-            ALPROTO_HTTP, LogHttpLogger);
+    OutputRegisterTxModule(LOGGER_HTTP, MODULE_NAME, "http-log",
+        LogHttpLogInitCtx, ALPROTO_HTTP, LogHttpLogger, LogHttpLogThreadInit,
+        LogHttpLogThreadDeinit, LogHttpLogExitPrintStats);
 }
 
 #define LOG_HTTP_MAXN_NODES 64
@@ -542,7 +535,7 @@ TmEcode LogHttpLogThreadInit(ThreadVars *t, void *initdata, void **data)
 
     if(initdata == NULL)
     {
-        SCLogDebug("Error getting context for HTTPLog.  \"initdata\" argument NULL");
+        SCLogDebug("Error getting context for LogHTTPLog.  \"initdata\" argument NULL");
         SCFree(aft);
         return TM_ECODE_FAILED;
     }
@@ -582,7 +575,7 @@ void LogHttpLogExitPrintStats(ThreadVars *tv, void *data)
         return;
     }
 
-    SCLogInfo("HTTP logger logged %" PRIu32 " requests", aft->uri_cnt);
+    //SCLogInfo("HTTP logger logged %" PRIu32 " requests", aft->uri_cnt);
 }
 
 /** \brief Create a new http log LogFileCtx.

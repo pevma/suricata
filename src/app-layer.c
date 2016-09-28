@@ -35,6 +35,7 @@
 #include "stream-tcp-inline.h"
 #include "flow.h"
 #include "flow-util.h"
+#include "flow-private.h"
 
 #include "util-debug.h"
 #include "util-print.h"
@@ -66,6 +67,18 @@ struct AppLayerThreadCtx_ {
 #endif
 };
 
+typedef struct AppLayerCounters_ {
+    char *name;
+    char *tx_name;
+    uint16_t counter_id;
+    uint16_t counter_tx_id;
+} AppLayerCounters;
+
+AppLayerCounters applayer_counters[FLOW_PROTO_MAX][ALPROTO_MAX];
+
+void AppLayerSetupCounters();
+void AppLayerDeSetupCounters();
+
 /***** L7 layer dispatchers *****/
 
 static void DisableAppLayer(Flow *f)
@@ -78,6 +91,20 @@ static inline int ProtoDetectDone(const Flow *f, const TcpSession *ssn, uint8_t 
     const TcpStream *stream = (direction & STREAM_TOSERVER) ? &ssn->client : &ssn->server;
     return ((stream->flags & STREAMTCP_STREAM_FLAG_APPPROTO_DETECTION_COMPLETED) ||
             (FLOW_IS_PM_DONE(f, direction) && FLOW_IS_PP_DONE(f, direction)));
+}
+
+static void AppLayerIncFlowCounter(ThreadVars *tv, Flow *f)
+{
+    if (likely(tv)) {
+        StatsIncr(tv, applayer_counters[f->protomap][f->alproto].counter_id);
+    }
+}
+
+void AppLayerIncTxCounter(ThreadVars *tv, Flow *f, uint64_t step)
+{
+    if (likely(tv)) {
+        StatsAddUI64(tv, applayer_counters[f->protomap][f->alproto].counter_tx_id, step);
+    }
 }
 
 int AppLayerHandleTCPData(ThreadVars *tv, TcpReassemblyThreadCtx *ra_ctx,
@@ -163,6 +190,11 @@ int AppLayerHandleTCPData(ThreadVars *tv, TcpReassemblyThreadCtx *ra_ctx,
 
             f->alproto = *alproto;
             StreamTcpSetStreamFlagAppProtoDetectionCompleted(stream);
+
+            /* account flow if we have both side */
+            if (*alproto_otherdir != ALPROTO_UNKNOWN) {
+                AppLayerIncFlowCounter(tv, f);
+            }
 
             /* if we have seen data from the other direction first, send
              * data for that direction first to the parser.  This shouldn't
@@ -274,7 +306,9 @@ int AppLayerHandleTCPData(ThreadVars *tv, TcpReassemblyThreadCtx *ra_ctx,
             ssn->data_first_seen_dir = APP_LAYER_DATA_ALREADY_SENT_TO_APP_LAYER;
 
             PACKET_PROFILING_APP_START(app_tctx, *alproto);
-            r = AppLayerParserParse(app_tctx->alp_tctx, f, *alproto, flags, data + data_al_so_far, data_len - data_al_so_far);
+            r = AppLayerParserParse(tv, app_tctx->alp_tctx, f, *alproto,
+                                    flags, data + data_al_so_far,
+                                    data_len - data_al_so_far);
             PACKET_PROFILING_APP_END(app_tctx, *alproto);
             f->data_al_so_far[dir] = 0;
         } else {
@@ -331,8 +365,10 @@ int AppLayerHandleTCPData(ThreadVars *tv, TcpReassemblyThreadCtx *ra_ctx,
                     ssn->data_first_seen_dir = APP_LAYER_DATA_ALREADY_SENT_TO_APP_LAYER;
 
                 PACKET_PROFILING_APP_START(app_tctx, *alproto_otherdir);
-                r = AppLayerParserParse(app_tctx->alp_tctx, f, *alproto_otherdir, flags,
-                                  data + data_al_so_far, data_len - data_al_so_far);
+                r = AppLayerParserParse(tv, app_tctx->alp_tctx, f,
+                                        *alproto_otherdir, flags,
+                                        data + data_al_so_far,
+                                        data_len - data_al_so_far);
                 PACKET_PROFILING_APP_END(app_tctx, *alproto_otherdir);
                 if (FLOW_IS_PM_DONE(f, flags) && FLOW_IS_PP_DONE(f, flags)) {
                     AppLayerDecoderEventsSetEventRaw(&p->app_layer_events,
@@ -441,7 +477,8 @@ int AppLayerHandleTCPData(ThreadVars *tv, TcpReassemblyThreadCtx *ra_ctx,
          * a start msg should have gotten us one */
         if (f->alproto != ALPROTO_UNKNOWN) {
             PACKET_PROFILING_APP_START(app_tctx, f->alproto);
-            r = AppLayerParserParse(app_tctx->alp_tctx, f, f->alproto, flags, data, data_len);
+            r = AppLayerParserParse(tv, app_tctx->alp_tctx, f, f->alproto,
+                                    flags, data, data_len);
             PACKET_PROFILING_APP_END(app_tctx, f->alproto);
         } else {
             SCLogDebug(" smsg not start, but no l7 data? Weird");
@@ -461,7 +498,7 @@ int AppLayerHandleTCPData(ThreadVars *tv, TcpReassemblyThreadCtx *ra_ctx,
  *  If the protocol is yet unknown, the proto detection code is run first.
  *
  *  \param dp_ctx Thread app layer detect context
- *  \param f unlocked flow
+ *  \param f *locked* flow
  *  \param p UDP packet
  *
  *  \retval 0 ok
@@ -472,8 +509,6 @@ int AppLayerHandleUdp(ThreadVars *tv, AppLayerThreadCtx *tctx, Packet *p, Flow *
     SCEnter();
 
     int r = 0;
-
-    FLOWLOCK_WRLOCK(f);
 
     uint8_t flags = 0;
     if (p->flowflags & FLOW_PKT_TOSERVER) {
@@ -499,11 +534,11 @@ int AppLayerHandleUdp(ThreadVars *tv, AppLayerThreadCtx *tctx, Packet *p, Flow *
 
         if (f->alproto != ALPROTO_UNKNOWN) {
             f->flags |= FLOW_ALPROTO_DETECT_DONE;
+            AppLayerIncFlowCounter(tv, f);
 
             PACKET_PROFILING_APP_START(tctx, f->alproto);
-            r = AppLayerParserParse(tctx->alp_tctx,
-                              f, f->alproto, flags,
-                              p->payload, p->payload_len);
+            r = AppLayerParserParse(tv, tctx->alp_tctx, f, f->alproto,
+                                    flags, p->payload, p->payload_len);
             PACKET_PROFILING_APP_END(tctx, f->alproto);
         } else {
             f->flags |= FLOW_ALPROTO_DETECT_DONE;
@@ -517,9 +552,8 @@ int AppLayerHandleUdp(ThreadVars *tv, AppLayerThreadCtx *tctx, Packet *p, Flow *
          * a start msg should have gotten us one */
         if (f->alproto != ALPROTO_UNKNOWN) {
             PACKET_PROFILING_APP_START(tctx, f->alproto);
-            r = AppLayerParserParse(tctx->alp_tctx,
-                              f, f->alproto, flags,
-                              p->payload, p->payload_len);
+            r = AppLayerParserParse(tv, tctx->alp_tctx, f, f->alproto,
+                                    flags, p->payload, p->payload_len);
             PACKET_PROFILING_APP_END(tctx, f->alproto);
         } else {
             SCLogDebug("udp session has started, but failed to detect alproto "
@@ -527,7 +561,6 @@ int AppLayerHandleUdp(ThreadVars *tv, AppLayerThreadCtx *tctx, Packet *p, Flow *
         }
     }
 
-    FLOWLOCK_UNLOCK(f);
     PACKET_PROFILING_APP_STORE(tctx, p);
 
     SCReturnInt(r);
@@ -579,6 +612,8 @@ int AppLayerSetup(void)
     AppLayerParserRegisterProtocolParsers();
     AppLayerProtoDetectPrepareState();
 
+    AppLayerSetupCounters();
+
     SCReturnInt(0);
 }
 
@@ -588,6 +623,8 @@ int AppLayerDeSetup(void)
 
     AppLayerProtoDetectDeSetup();
     AppLayerParserDeSetup();
+
+    AppLayerDeSetupCounters();
 
     SCReturnInt(0);
 }
@@ -651,14 +688,125 @@ void AppLayerRegisterGlobalCounters(void)
     StatsRegisterGlobalCounter("http.memcap", HTPMemcapGlobalCounter);
 }
 
+#define IPPROTOS_MAX 2
+void AppLayerSetupCounters()
+{
+    uint8_t ipprotos[] = { IPPROTO_TCP, IPPROTO_UDP };
+    uint8_t ipproto;
+    AppProto alproto;
+    AppProto alprotos[ALPROTO_MAX];
+
+    AppLayerProtoDetectSupportedAppProtocols(alprotos);
+
+    for (ipproto = 0; ipproto < IPPROTOS_MAX; ipproto++) {
+        uint8_t other_ipproto = (ipprotos[ipproto] == IPPROTO_TCP) ? IPPROTO_UDP : IPPROTO_TCP;
+        const char *ipproto_suffix = (ipprotos[ipproto] == IPPROTO_TCP) ? "_tcp" : "_udp";
+
+        for (alproto = 0; alproto < ALPROTO_MAX; alproto++) {
+            if (alprotos[alproto] == 1) {
+                char *str = "app_layer.flow.";
+                char *tx_str = "app_layer.tx.";
+                char *alproto_str = AppLayerGetProtoName(alproto);
+                int alproto_len = strlen(alproto_str) + 1;
+                uint8_t ipproto_map = FlowGetProtoMapping(ipprotos[ipproto]);
+                size_t size;
+
+                if (AppLayerParserProtoIsRegistered(ipprotos[ipproto], alproto) &&
+                    AppLayerParserProtoIsRegistered(other_ipproto, alproto))
+                {
+                    size = strlen(str) + alproto_len + strlen(ipproto_suffix);
+                    applayer_counters[ipproto_map][alproto].name = SCMalloc(size);
+                    if (applayer_counters[ipproto_map][alproto].name == NULL) {
+                        return;
+                    }
+
+                    snprintf(applayer_counters[ipproto_map][alproto].name, size,
+                            "%s%s%s", str, alproto_str, ipproto_suffix);
+                    if (AppLayerParserProtocolIsTxAware(ipprotos[ipproto], alproto)) {
+                        size = strlen(tx_str) + alproto_len + strlen(ipproto_suffix);
+                        applayer_counters[ipproto_map][alproto].tx_name = SCMalloc(size);
+                        if (applayer_counters[ipproto_map][alproto].tx_name == NULL) {
+                            return;
+                        }
+                        snprintf(applayer_counters[ipproto_map][alproto].tx_name, size,
+                                "%s%s%s", tx_str, alproto_str, ipproto_suffix);
+                    }
+                } else {
+                    size = strlen(str) + alproto_len;
+                    applayer_counters[ipproto_map][alproto].name = SCMalloc(size);
+                    if (applayer_counters[ipproto_map][alproto].name == NULL) {
+                        return;
+                    }
+                    snprintf(applayer_counters[ipproto_map][alproto].name, size,
+                            "%s%s", str, alproto_str);
+                    if (AppLayerParserProtocolIsTxAware(ipprotos[ipproto], alproto)) {
+                        size = strlen(tx_str) + alproto_len;
+                        applayer_counters[ipproto_map][alproto].tx_name = SCMalloc(size);
+                        if (applayer_counters[ipproto_map][alproto].tx_name == NULL) {
+                            return;
+                        }
+                        snprintf(applayer_counters[ipproto_map][alproto].tx_name, size,
+                                "%s%s", tx_str, alproto_str);
+                    }
+                }
+            }
+        }
+    }
+}
+
+void AppLayerRegisterThreadCounters(ThreadVars *tv)
+{
+    uint8_t ipprotos[] = { IPPROTO_TCP, IPPROTO_UDP };
+    uint8_t ipproto;
+    AppProto alproto;
+    AppProto alprotos[ALPROTO_MAX];
+
+    AppLayerProtoDetectSupportedAppProtocols(alprotos);
+
+    for (ipproto = 0; ipproto < IPPROTOS_MAX; ipproto++) {
+        for (alproto = 0; alproto < ALPROTO_MAX; alproto++) {
+            if (alprotos[alproto] == 1) {
+                uint8_t ipproto_map = FlowGetProtoMapping(ipprotos[ipproto]);
+                applayer_counters[ipproto_map][alproto].counter_id =
+                    StatsRegisterCounter(applayer_counters[ipproto_map][alproto].name, tv);
+
+                if (AppLayerParserProtocolIsTxAware(ipprotos[ipproto], alproto)) {
+                    applayer_counters[ipproto_map][alproto].counter_tx_id =
+                        StatsRegisterCounter(applayer_counters[ipproto_map][alproto].tx_name, tv);
+                }
+            }
+        }
+    }
+}
+
+void AppLayerDeSetupCounters()
+{
+    uint8_t ipprotos[] = { IPPROTO_TCP, IPPROTO_UDP };
+    uint8_t ipproto;
+    AppProto alproto;
+    AppProto alprotos[ALPROTO_MAX];
+
+    AppLayerProtoDetectSupportedAppProtocols(alprotos);
+
+    for (ipproto = 0; ipproto < IPPROTOS_MAX; ipproto++) {
+        for (alproto = 0; alproto < ALPROTO_MAX; alproto++) {
+            if (alprotos[alproto] == 1) {
+                if (applayer_counters[FlowGetProtoMapping(ipprotos[ipproto])][alproto].name) {
+                    SCFree(applayer_counters[FlowGetProtoMapping(ipprotos[ipproto])][alproto].name);
+                    applayer_counters[FlowGetProtoMapping(ipprotos[ipproto])][alproto].name = NULL;
+                }
+            }
+            if (applayer_counters[FlowGetProtoMapping(ipproto)][alproto].tx_name) {
+                SCFree(applayer_counters[FlowGetProtoMapping(ipproto)][alproto].tx_name);
+                applayer_counters[FlowGetProtoMapping(ipproto)][alproto].tx_name = NULL;
+            }
+        }
+    }
+}
 /***** Unittests *****/
 
 #ifdef UNITTESTS
-
 #include "stream-tcp.h"
-#include "stream-tcp-private.h"
-#include "stream-tcp-reassemble.h"
-#include "stream-tcp-inline.h"
 #include "stream-tcp-util.h"
 #include "stream.h"
 #include "util-unittest.h"
@@ -680,7 +828,6 @@ static int AppLayerTest01(void)
     memset(p, 0, SIZE_OF_PACKET);
     memset (&f, 0, sizeof(Flow));
     memset(&tv, 0, sizeof (ThreadVars));
-    StreamTcpThreadInit(&tv, NULL, (void **)&stt);
     memset(&tcph, 0, sizeof (TCPHdr));
 
     FLOW_INITIALIZE(&f);
@@ -692,6 +839,7 @@ static int AppLayerTest01(void)
     int ret = 0;
 
     StreamTcpInitConfig(TRUE);
+    StreamTcpThreadInit(&tv, NULL, (void **)&stt);
 
     tcph.th_win = htons(5480);
     tcph.th_flags = TH_SYN;
@@ -920,7 +1068,6 @@ static int AppLayerTest02(void)
     memset(p, 0, SIZE_OF_PACKET);
     memset (&f, 0, sizeof(Flow));
     memset(&tv, 0, sizeof (ThreadVars));
-    StreamTcpThreadInit(&tv, NULL, (void **)&stt);
     memset(&tcph, 0, sizeof (TCPHdr));
 
     FLOW_INITIALIZE(&f);
@@ -932,6 +1079,7 @@ static int AppLayerTest02(void)
     int ret = 0;
 
     StreamTcpInitConfig(TRUE);
+    StreamTcpThreadInit(&tv, NULL, (void **)&stt);
 
     /* handshake */
     tcph.th_win = htons(5480);
@@ -1209,7 +1357,6 @@ static int AppLayerTest03(void)
     memset(p, 0, SIZE_OF_PACKET);
     memset (&f, 0, sizeof(Flow));
     memset(&tv, 0, sizeof (ThreadVars));
-    StreamTcpThreadInit(&tv, NULL, (void **)&stt);
     memset(&tcph, 0, sizeof (TCPHdr));
 
     FLOW_INITIALIZE(&f);
@@ -1221,6 +1368,7 @@ static int AppLayerTest03(void)
     int ret = 0;
 
     StreamTcpInitConfig(TRUE);
+    StreamTcpThreadInit(&tv, NULL, (void **)&stt);
 
     tcph.th_win = htons(5480);
     tcph.th_flags = TH_SYN;
@@ -1448,7 +1596,6 @@ static int AppLayerTest04(void)
     memset(p, 0, SIZE_OF_PACKET);
     memset (&f, 0, sizeof(Flow));
     memset(&tv, 0, sizeof (ThreadVars));
-    StreamTcpThreadInit(&tv, NULL, (void **)&stt);
     memset(&tcph, 0, sizeof (TCPHdr));
 
     FLOW_INITIALIZE(&f);
@@ -1460,6 +1607,7 @@ static int AppLayerTest04(void)
     int ret = 0;
 
     StreamTcpInitConfig(TRUE);
+    StreamTcpThreadInit(&tv, NULL, (void **)&stt);
 
     /* handshake */
     tcph.th_win = htons(5480);
@@ -1736,7 +1884,6 @@ static int AppLayerTest05(void)
     memset(p, 0, SIZE_OF_PACKET);
     memset (&f, 0, sizeof(Flow));
     memset(&tv, 0, sizeof (ThreadVars));
-    StreamTcpThreadInit(&tv, NULL, (void **)&stt);
     memset(&tcph, 0, sizeof (TCPHdr));
 
     FLOW_INITIALIZE(&f);
@@ -1748,6 +1895,7 @@ static int AppLayerTest05(void)
     int ret = 0;
 
     StreamTcpInitConfig(TRUE);
+    StreamTcpThreadInit(&tv, NULL, (void **)&stt);
 
     tcph.th_win = htons(5480);
     tcph.th_flags = TH_SYN;
@@ -1976,7 +2124,6 @@ static int AppLayerTest06(void)
     memset(p, 0, SIZE_OF_PACKET);
     memset (&f, 0, sizeof(Flow));
     memset(&tv, 0, sizeof (ThreadVars));
-    StreamTcpThreadInit(&tv, NULL, (void **)&stt);
     memset(&tcph, 0, sizeof (TCPHdr));
 
     FLOW_INITIALIZE(&f);
@@ -1988,6 +2135,7 @@ static int AppLayerTest06(void)
     int ret = 0;
 
     StreamTcpInitConfig(TRUE);
+    StreamTcpThreadInit(&tv, NULL, (void **)&stt);
 
     tcph.th_win = htons(5480);
     tcph.th_flags = TH_SYN;
@@ -2192,7 +2340,6 @@ static int AppLayerTest07(void)
     memset(p, 0, SIZE_OF_PACKET);
     memset (&f, 0, sizeof(Flow));
     memset(&tv, 0, sizeof (ThreadVars));
-    StreamTcpThreadInit(&tv, NULL, (void **)&stt);
     memset(&tcph, 0, sizeof (TCPHdr));
 
     FLOW_INITIALIZE(&f);
@@ -2204,6 +2351,7 @@ static int AppLayerTest07(void)
     int ret = 0;
 
     StreamTcpInitConfig(TRUE);
+    StreamTcpThreadInit(&tv, NULL, (void **)&stt);
 
     tcph.th_win = htons(5480);
     tcph.th_flags = TH_SYN;
@@ -2432,7 +2580,6 @@ static int AppLayerTest08(void)
     memset(p, 0, SIZE_OF_PACKET);
     memset (&f, 0, sizeof(Flow));
     memset(&tv, 0, sizeof (ThreadVars));
-    StreamTcpThreadInit(&tv, NULL, (void **)&stt);
     memset(&tcph, 0, sizeof (TCPHdr));
 
     FLOW_INITIALIZE(&f);
@@ -2444,6 +2591,7 @@ static int AppLayerTest08(void)
     int ret = 0;
 
     StreamTcpInitConfig(TRUE);
+    StreamTcpThreadInit(&tv, NULL, (void **)&stt);
 
     tcph.th_win = htons(5480);
     tcph.th_flags = TH_SYN;
@@ -2674,7 +2822,6 @@ static int AppLayerTest09(void)
     memset(p, 0, SIZE_OF_PACKET);
     memset (&f, 0, sizeof(Flow));
     memset(&tv, 0, sizeof (ThreadVars));
-    StreamTcpThreadInit(&tv, NULL, (void **)&stt);
     memset(&tcph, 0, sizeof (TCPHdr));
 
     FLOW_INITIALIZE(&f);
@@ -2686,6 +2833,7 @@ static int AppLayerTest09(void)
     int ret = 0;
 
     StreamTcpInitConfig(TRUE);
+    StreamTcpThreadInit(&tv, NULL, (void **)&stt);
 
     tcph.th_win = htons(5480);
     tcph.th_flags = TH_SYN;
@@ -2955,7 +3103,6 @@ static int AppLayerTest10(void)
     memset(p, 0, SIZE_OF_PACKET);
     memset (&f, 0, sizeof(Flow));
     memset(&tv, 0, sizeof (ThreadVars));
-    StreamTcpThreadInit(&tv, NULL, (void **)&stt);
     memset(&tcph, 0, sizeof (TCPHdr));
 
     FLOW_INITIALIZE(&f);
@@ -2967,6 +3114,7 @@ static int AppLayerTest10(void)
     int ret = 0;
 
     StreamTcpInitConfig(TRUE);
+    StreamTcpThreadInit(&tv, NULL, (void **)&stt);
 
     tcph.th_win = htons(5480);
     tcph.th_flags = TH_SYN;
@@ -3212,7 +3360,6 @@ static int AppLayerTest11(void)
     memset(p, 0, SIZE_OF_PACKET);
     memset (&f, 0, sizeof(Flow));
     memset(&tv, 0, sizeof (ThreadVars));
-    StreamTcpThreadInit(&tv, NULL, (void **)&stt);
     memset(&tcph, 0, sizeof (TCPHdr));
 
     FLOW_INITIALIZE(&f);
@@ -3224,6 +3371,7 @@ static int AppLayerTest11(void)
     int ret = 0;
 
     StreamTcpInitConfig(TRUE);
+    StreamTcpThreadInit(&tv, NULL, (void **)&stt);
 
     tcph.th_win = htons(5480);
     tcph.th_flags = TH_SYN;
@@ -3503,17 +3651,17 @@ void AppLayerUnittestsRegister(void)
 {
     SCEnter();
 
-    UtRegisterTest("AppLayerTest01", AppLayerTest01, 1);
-    UtRegisterTest("AppLayerTest02", AppLayerTest02, 1);
-    UtRegisterTest("AppLayerTest03", AppLayerTest03, 1);
-    UtRegisterTest("AppLayerTest04", AppLayerTest04, 1);
-    UtRegisterTest("AppLayerTest05", AppLayerTest05, 1);
-    UtRegisterTest("AppLayerTest06", AppLayerTest06, 1);
-    UtRegisterTest("AppLayerTest07", AppLayerTest07, 1);
-    UtRegisterTest("AppLayerTest08", AppLayerTest08, 1);
-    UtRegisterTest("AppLayerTest09", AppLayerTest09, 1);
-    UtRegisterTest("AppLayerTest10", AppLayerTest10, 1);
-    UtRegisterTest("AppLayerTest11", AppLayerTest11, 1);
+    UtRegisterTest("AppLayerTest01", AppLayerTest01);
+    UtRegisterTest("AppLayerTest02", AppLayerTest02);
+    UtRegisterTest("AppLayerTest03", AppLayerTest03);
+    UtRegisterTest("AppLayerTest04", AppLayerTest04);
+    UtRegisterTest("AppLayerTest05", AppLayerTest05);
+    UtRegisterTest("AppLayerTest06", AppLayerTest06);
+    UtRegisterTest("AppLayerTest07", AppLayerTest07);
+    UtRegisterTest("AppLayerTest08", AppLayerTest08);
+    UtRegisterTest("AppLayerTest09", AppLayerTest09);
+    UtRegisterTest("AppLayerTest10", AppLayerTest10);
+    UtRegisterTest("AppLayerTest11", AppLayerTest11);
 
     SCReturn;
 }

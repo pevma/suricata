@@ -73,34 +73,12 @@ void DetectFilestoreRegister(void)
     sigmatch_table[DETECT_FILESTORE].desc = "stores files to disk if the rule matched";
     sigmatch_table[DETECT_FILESTORE].url = "https://redmine.openinfosecfoundation.org/projects/suricata/wiki/File-keywords#filestore";
     sigmatch_table[DETECT_FILESTORE].FileMatch = DetectFilestoreMatch;
-    sigmatch_table[DETECT_FILESTORE].alproto = ALPROTO_HTTP;
     sigmatch_table[DETECT_FILESTORE].Setup = DetectFilestoreSetup;
     sigmatch_table[DETECT_FILESTORE].Free  = DetectFilestoreFree;
     sigmatch_table[DETECT_FILESTORE].RegisterTests = NULL;
     sigmatch_table[DETECT_FILESTORE].flags = SIGMATCH_OPTIONAL_OPT;
 
-    const char *eb;
-    int eo;
-    int opts = 0;
-
-    parse_regex = pcre_compile(PARSE_REGEX, opts, &eb, &eo, NULL);
-    if(parse_regex == NULL)
-    {
-        SCLogError(SC_ERR_PCRE_COMPILE, "pcre compile of \"%s\" failed at offset %" PRId32 ": %s", PARSE_REGEX, eo, eb);
-        goto error;
-    }
-
-    parse_regex_study = pcre_study(parse_regex, 0, &eb);
-    if(eb != NULL)
-    {
-        SCLogError(SC_ERR_PCRE_STUDY, "pcre study failed: %s", eb);
-        goto error;
-    }
-	SCLogDebug("registering filestore rule option");
-    return;
-error:
-    /* XXX */
-    return;
+    DetectSetupParseRegexes(PARSE_REGEX, &parse_regex, &parse_regex_study);
 }
 
 /**
@@ -224,9 +202,6 @@ int DetectFilestorePostMatch(ThreadVars *t, DetectEngineThreadCtx *det_ctx, Pack
     else
         flags |= STREAM_TOSERVER;
 
-    if (det_ctx->flow_locked == 0)
-        FLOWLOCK_WRLOCK(p->flow);
-
     FileContainer *ffc = AppLayerParserGetFiles(p->flow->proto, p->flow->alproto,
                                                 p->flow->alstate, flags);
 
@@ -245,9 +220,6 @@ int DetectFilestorePostMatch(ThreadVars *t, DetectEngineThreadCtx *det_ctx, Pack
                     det_ctx->filestore[u].file_id, det_ctx->filestore[u].tx_id);
         }
     }
-
-    if (det_ctx->flow_locked == 0)
-        FLOWLOCK_UNLOCK(p->flow);
 
     SCReturnInt(0);
 }
@@ -412,11 +384,6 @@ static int DetectFilestoreSetup (DetectEngineCtx *de_ctx, Signature *s, char *st
         sm->ctx = (SigMatchCtx*)fd;
     } else {
         sm->ctx = (SigMatchCtx*)NULL;
-    }
-
-    if (s->alproto != ALPROTO_HTTP && s->alproto != ALPROTO_SMTP) {
-        SCLogError(SC_ERR_CONFLICTING_RULE_KEYWORDS, "rule contains conflicting keywords.");
-        goto error;
     }
 
     if (s->alproto == ALPROTO_HTTP) {

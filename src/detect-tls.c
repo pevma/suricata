@@ -98,7 +98,6 @@ void DetectTlsRegister (void)
     sigmatch_table[DETECT_AL_TLS_SUBJECT].url = "https://redmine.openinfosecfoundation.org/projects/suricata/wiki/TLS-keywords#tlssubject";
     sigmatch_table[DETECT_AL_TLS_SUBJECT].Match = NULL;
     sigmatch_table[DETECT_AL_TLS_SUBJECT].AppLayerMatch = DetectTlsSubjectMatch;
-    sigmatch_table[DETECT_AL_TLS_SUBJECT].alproto = ALPROTO_TLS;
     sigmatch_table[DETECT_AL_TLS_SUBJECT].Setup = DetectTlsSubjectSetup;
     sigmatch_table[DETECT_AL_TLS_SUBJECT].Free  = DetectTlsSubjectFree;
     sigmatch_table[DETECT_AL_TLS_SUBJECT].RegisterTests = DetectTlsSubjectRegisterTests;
@@ -108,7 +107,6 @@ void DetectTlsRegister (void)
     sigmatch_table[DETECT_AL_TLS_ISSUERDN].url = "https://redmine.openinfosecfoundation.org/projects/suricata/wiki/TLS-keywords#tlsissuerdn";
     sigmatch_table[DETECT_AL_TLS_ISSUERDN].Match = NULL;
     sigmatch_table[DETECT_AL_TLS_ISSUERDN].AppLayerMatch = DetectTlsIssuerDNMatch;
-    sigmatch_table[DETECT_AL_TLS_ISSUERDN].alproto = ALPROTO_TLS;
     sigmatch_table[DETECT_AL_TLS_ISSUERDN].Setup = DetectTlsIssuerDNSetup;
     sigmatch_table[DETECT_AL_TLS_ISSUERDN].Free  = DetectTlsIssuerDNFree;
     sigmatch_table[DETECT_AL_TLS_ISSUERDN].RegisterTests = DetectTlsIssuerDNRegisterTests;
@@ -118,7 +116,6 @@ void DetectTlsRegister (void)
     sigmatch_table[DETECT_AL_TLS_FINGERPRINT].url = "https://redmine.openinfosecfoundation.org/projects/suricata/wiki/TLS-keywords#tlsfingerprint";
     sigmatch_table[DETECT_AL_TLS_FINGERPRINT].Match = NULL;
     sigmatch_table[DETECT_AL_TLS_FINGERPRINT].AppLayerMatch = DetectTlsFingerprintMatch;
-    sigmatch_table[DETECT_AL_TLS_FINGERPRINT].alproto = ALPROTO_TLS;
     sigmatch_table[DETECT_AL_TLS_FINGERPRINT].Setup = DetectTlsFingerprintSetup;
     sigmatch_table[DETECT_AL_TLS_FINGERPRINT].Free  = DetectTlsFingerprintFree;
     sigmatch_table[DETECT_AL_TLS_FINGERPRINT].RegisterTests = NULL;
@@ -128,64 +125,17 @@ void DetectTlsRegister (void)
     sigmatch_table[DETECT_AL_TLS_STORE].url = "https://redmine.openinfosecfoundation.org/projects/suricata/wiki/TLS-keywords#tlsstore";
     sigmatch_table[DETECT_AL_TLS_STORE].Match = NULL;
     sigmatch_table[DETECT_AL_TLS_STORE].AppLayerMatch = DetectTlsStoreMatch;
-    sigmatch_table[DETECT_AL_TLS_STORE].alproto = ALPROTO_TLS;
     sigmatch_table[DETECT_AL_TLS_STORE].Setup = DetectTlsStoreSetup;
     sigmatch_table[DETECT_AL_TLS_STORE].Free  = NULL;
     sigmatch_table[DETECT_AL_TLS_STORE].RegisterTests = NULL;
     sigmatch_table[DETECT_AL_TLS_STORE].flags |= SIGMATCH_NOOPT;
 
-    const char *eb;
-    int eo;
-    int opts = 0;
-
-    SCLogDebug("registering tls.subject rule option");
-
-    subject_parse_regex = pcre_compile(PARSE_REGEX, opts, &eb, &eo, NULL);
-    if (subject_parse_regex == NULL) {
-        SCLogError(SC_ERR_PCRE_COMPILE, "Compile of \"%s\" failed at offset %" PRId32 ": %s",
-                    PARSE_REGEX, eo, eb);
-        goto error;
-    }
-
-    subject_parse_regex_study = pcre_study(subject_parse_regex, 0, &eb);
-    if (eb != NULL) {
-        SCLogError(SC_ERR_PCRE_STUDY, "pcre study failed: %s", eb);
-        goto error;
-    }
-
-    SCLogDebug("registering tls.issuerdn rule option");
-
-    issuerdn_parse_regex = pcre_compile(PARSE_REGEX, opts, &eb, &eo, NULL);
-    if (issuerdn_parse_regex == NULL) {
-        SCLogError(SC_ERR_PCRE_COMPILE, "Compile of \"%s\" failed at offset %" PRId32 ": %s",
-                PARSE_REGEX, eo, eb);
-        goto error;
-    }
-
-    issuerdn_parse_regex_study = pcre_study(issuerdn_parse_regex, 0, &eb);
-    if (eb != NULL) {
-        SCLogError(SC_ERR_PCRE_STUDY, "pcre study failed: %s", eb);
-        goto error;
-    }
-
-    SCLogDebug("registering tls.fingerprint rule option");
-
-    fingerprint_parse_regex = pcre_compile(PARSE_REGEX_FINGERPRINT, opts, &eb, &eo, NULL);
-    if (fingerprint_parse_regex == NULL) {
-        SCLogError(SC_ERR_PCRE_COMPILE, "Compile of \"%s\" failed at offset %" PRId32 ": %s", PARSE_REGEX_FINGERPRINT, eo, eb);
-        goto error;
-    }
-
-    fingerprint_parse_regex_study = pcre_study(fingerprint_parse_regex, 0, &eb);
-    if (eb != NULL) {
-        SCLogError(SC_ERR_PCRE_STUDY, "pcre study failed: %s", eb);
-        goto error;
-    }
-
-    return;
-
-error:
-    return;
+    DetectSetupParseRegexes(PARSE_REGEX,
+            &subject_parse_regex, &subject_parse_regex_study);
+    DetectSetupParseRegexes(PARSE_REGEX,
+            &issuerdn_parse_regex, &issuerdn_parse_regex_study);
+    DetectSetupParseRegexes(PARSE_REGEX_FINGERPRINT,
+            &fingerprint_parse_regex, &fingerprint_parse_regex_study);
 }
 
 /**
@@ -277,6 +227,7 @@ static DetectTlsData *DetectTlsSubjectParse (char *str)
     }
     if (str_ptr[0] == '!')
         flag = DETECT_CONTENT_NEGATED;
+    pcre_free_substring(str_ptr);
 
     res = pcre_get_substring((char *)str, ov, MAX_SUBSTRINGS, 2, &str_ptr);
     if (res < 0) {
@@ -295,6 +246,8 @@ static DetectTlsData *DetectTlsSubjectParse (char *str)
     if (unlikely(orig == NULL)) {
         goto error;
     }
+    pcre_free_substring(str_ptr);
+
     tmp_str=orig;
 
     /* Let's see if we need to escape "'s */
@@ -484,6 +437,7 @@ static DetectTlsData *DetectTlsIssuerDNParse(char *str)
     }
     if (str_ptr[0] == '!')
         flag = DETECT_CONTENT_NEGATED;
+    pcre_free_substring(str_ptr);
 
     res = pcre_get_substring((char *)str, ov, MAX_SUBSTRINGS, 2, &str_ptr);
     if (res < 0) {
@@ -502,6 +456,8 @@ static DetectTlsData *DetectTlsIssuerDNParse(char *str)
     if (unlikely(orig == NULL)) {
         goto error;
     }
+    pcre_free_substring(str_ptr);
+
     tmp_str=orig;
 
     /* Let's see if we need to escape "'s */
@@ -627,6 +583,7 @@ static DetectTlsData *DetectTlsFingerprintParse (char *str)
     }
     if (str_ptr[0] == '!')
         flag = DETECT_CONTENT_NEGATED;
+    pcre_free_substring(str_ptr);
 
     res = pcre_get_substring((char *)str, ov, MAX_SUBSTRINGS, 2, &str_ptr);
     if (res < 0) {
@@ -645,6 +602,8 @@ static DetectTlsData *DetectTlsFingerprintParse (char *str)
     if (unlikely(orig == NULL)) {
         goto error;
     }
+    pcre_free_substring(str_ptr);
+
     tmp_str=orig;
 
     /* Let's see if we need to escape "'s */

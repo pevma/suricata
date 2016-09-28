@@ -375,7 +375,7 @@ int StreamTcpReassemblyConfig(char quiet)
             sizes[npools].pktsize = 0xffff;
             sizes[npools].prealloc = 8;
             npools++;
-            SCLogInfo("appended a segment pool for pktsize 65536");
+            SCLogConfig("appended a segment pool for pktsize 65536");
         }
     } else if (npools == 0) {
         /* defaults */
@@ -447,7 +447,7 @@ int StreamTcpReassemblyConfig(char quiet)
         SCLogDebug("my_segment_pktsizes[i] %u, my_segment_poolsizes[i] %u",
                 my_segment_pktsizes[i], my_segment_poolsizes[i]);
         if (!quiet)
-            SCLogInfo("segment pool: pktsize %u, prealloc %u",
+            SCLogConfig("segment pool: pktsize %u, prealloc %u",
                     my_segment_pktsizes[i], my_segment_poolsizes[i]);
     }
 
@@ -484,7 +484,7 @@ int StreamTcpReassemblyConfig(char quiet)
         stream_chunk_prealloc = prealloc;
     }
     if (!quiet)
-        SCLogInfo("stream.reassembly \"chunk-prealloc\": %u", stream_chunk_prealloc);
+        SCLogConfig("stream.reassembly \"chunk-prealloc\": %u", stream_chunk_prealloc);
     StreamMsgQueuesInit(stream_chunk_prealloc);
 
     intmax_t zero_copy_size = 128;
@@ -497,7 +497,7 @@ int StreamTcpReassemblyConfig(char quiet)
     }
     stream_config.zero_copy_size = (uint16_t)zero_copy_size;
     if (!quiet)
-        SCLogInfo("stream.reassembly \"zero-copy-size\": %u", stream_config.zero_copy_size);
+        SCLogConfig("stream.reassembly \"zero-copy-size\": %u", stream_config.zero_copy_size);
 
     return 0;
 }
@@ -539,7 +539,7 @@ void StreamTcpReassembleFree(char quiet)
                        segment_pool[u16]->allocated);
 
             if (segment_pool[u16]->max_outstanding > segment_pool[u16]->allocated) {
-                SCLogInfo("TCP segment pool of size %u had a peak use of %u segments, "
+                SCLogPerf("TCP segment pool of size %u had a peak use of %u segments, "
                         "more than the prealloc setting of %u", segment_pool_pktsizes[u16],
                         segment_pool[u16]->max_outstanding, segment_pool[u16]->allocated);
             }
@@ -564,8 +564,8 @@ void StreamTcpReassembleFree(char quiet)
     SCLogDebug("segment_pool_memcnt %"PRIu64"", segment_pool_memcnt);
     SCMutexDestroy(&segment_pool_memuse_mutex);
     SCMutexDestroy(&segment_pool_cnt_mutex);
-    SCLogInfo("dbg_app_layer_gap %u", dbg_app_layer_gap);
-    SCLogInfo("dbg_app_layer_gap_candidate %u", dbg_app_layer_gap_candidate);
+    SCLogPerf("dbg_app_layer_gap %u", dbg_app_layer_gap);
+    SCLogPerf("dbg_app_layer_gap_candidate %u", dbg_app_layer_gap_candidate);
 #endif
 }
 
@@ -1805,6 +1805,7 @@ static uint32_t StreamTcpReassembleCheckDepth(TcpStream *stream,
             /* complete fit */
             SCReturnUInt(size);
         } else {
+            stream->flags |= STREAMTCP_STREAM_FLAG_DEPTH_REACHED;
             /* partial fit, return only what fits */
             uint32_t part = (stream->isn + stream_config.reassembly_depth) - seq;
 #if DEBUG
@@ -5086,14 +5087,14 @@ static int StreamTcpTestMissedPacket (TcpReassemblyThreadCtx *ra_ctx,
         s = &ssn->client;
     }
 
-    SCMutexLock(&f.m);
+    FLOWLOCK_WRLOCK(&f);
     if (StreamTcpReassembleHandleSegment(&tv, ra_ctx, ssn, s, p, &pq) == -1) {
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         SCFree(p);
         return -1;
     }
 
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     SCFree(p);
     return 0;
 }
@@ -6169,7 +6170,7 @@ static int StreamTcpReassembleTest38 (void)
     TcpStream *s = NULL;
     s = &ssn.server;
 
-    SCMutexLock(&f.m);
+    FLOWLOCK_WRLOCK(&f);
     if (StreamTcpReassembleHandleSegment(&tv, ra_ctx, &ssn, s, p, &pq) == -1) {
         printf("failed in segments reassembly, while processing toserver packet (1): ");
         goto end;
@@ -6203,7 +6204,7 @@ static int StreamTcpReassembleTest38 (void)
 end:
     StreamTcpReassembleFreeThreadCtx(ra_ctx);
     StreamTcpFreeConfig(TRUE);
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     SCFree(p);
     return ret;
 }
@@ -6238,7 +6239,7 @@ static int StreamTcpReassembleTest39 (void)
     p->flow = &f;
     p->tcph = &tcph;
 
-    SCMutexLock(&f.m);
+    FLOWLOCK_WRLOCK(&f);
     int ret = 0;
 
     StreamTcpInitConfig(TRUE);
@@ -6808,7 +6809,7 @@ end:
     StreamTcpSessionClear(p->flow->protoctx);
     StreamTcpFreeConfig(TRUE);
     SCFree(p);
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     return ret;
 }
 
@@ -6880,7 +6881,7 @@ static int StreamTcpReassembleTest40 (void)
     TcpStream *s = NULL;
     s = &ssn.client;
 
-    SCMutexLock(&f->m);
+    FLOWLOCK_WRLOCK(f);
     if (StreamTcpReassembleHandleSegment(&tv, ra_ctx, &ssn, s, p, &pq) == -1) {
         printf("failed in segments reassembly, while processing toserver packet (1): ");
         goto end;
@@ -7010,7 +7011,7 @@ end:
     StreamTcpReassembleFreeThreadCtx(ra_ctx);
     StreamTcpFreeConfig(TRUE);
     SCFree(p);
-    SCMutexUnlock(&f->m);
+    FLOWLOCK_UNLOCK(f);
     UTHFreeFlow(f);
     return ret;
 }
@@ -7085,7 +7086,7 @@ static int StreamTcpReassembleTest43 (void)
     TcpStream *s = NULL;
     s = &ssn.server;
 
-    SCMutexLock(&f->m);
+    FLOWLOCK_WRLOCK(f);
     if (StreamTcpReassembleHandleSegment(&tv, ra_ctx, &ssn, s, p, &pq) == -1) {
         printf("failed in segments reassembly, while processing toserver packet (1): ");
         goto end;
@@ -7181,7 +7182,7 @@ end:
     StreamTcpReassembleFreeThreadCtx(ra_ctx);
     StreamTcpFreeConfig(TRUE);
     SCFree(p);
-    SCMutexUnlock(&f->m);
+    FLOWLOCK_UNLOCK(f);
     UTHFreeFlow(f);
     return ret;
 }
@@ -7289,7 +7290,7 @@ static int StreamTcpReassembleTest45 (void)
     TcpStream *s = NULL;
     s = &ssn.server;
 
-    SCMutexLock(&f->m);
+    FLOWLOCK_WRLOCK(f);
     if (StreamTcpReassembleHandleSegment(&tv, ra_ctx, &ssn, s, p, &pq) == -1) {
         printf("failed in segments reassembly, while processing toclient packet: ");
         goto end;
@@ -7341,7 +7342,7 @@ end:
     StreamTcpReassembleFreeThreadCtx(ra_ctx);
     StreamTcpFreeConfig(TRUE);
     SCFree(p);
-    SCMutexUnlock(&f->m);
+    FLOWLOCK_UNLOCK(f);
     UTHFreeFlow(f);
     return ret;
 }
@@ -7408,7 +7409,7 @@ static int StreamTcpReassembleTest46 (void)
     TcpStream *s = NULL;
     s = &ssn.server;
 
-    SCMutexLock(&f->m);
+    FLOWLOCK_WRLOCK(f);
     if (StreamTcpReassembleHandleSegment(&tv, ra_ctx, &ssn, s, p, &pq) == -1) {
         printf("failed in segments reassembly, while processing toclient packet\n");
         goto end;
@@ -7465,7 +7466,7 @@ end:
     StreamTcpReassembleFreeThreadCtx(ra_ctx);
     StreamTcpFreeConfig(TRUE);
     SCFree(p);
-    SCMutexUnlock(&f->m);
+    FLOWLOCK_UNLOCK(f);
     UTHFreeFlow(f);
     return ret;
 }
@@ -7522,7 +7523,7 @@ static int StreamTcpReassembleTest47 (void)
     TcpStream *s = NULL;
     uint8_t cnt = 0;
 
-    SCMutexLock(&f->m);
+    FLOWLOCK_WRLOCK(f);
     for (cnt=0; cnt < httplen1; cnt++) {
         tcph.th_seq = htonl(ssn.client.isn + 1 + cnt);
         tcph.th_ack = htonl(572799782UL);
@@ -7565,7 +7566,7 @@ end:
     StreamTcpReassembleFreeThreadCtx(ra_ctx);
     StreamTcpFreeConfig(TRUE);
     SCFree(p);
-    SCMutexUnlock(&f->m);
+    FLOWLOCK_UNLOCK(f);
     UTHFreeFlow(f);
     return ret;
 }
@@ -7597,7 +7598,7 @@ static int StreamTcpReassembleInlineTest01(void)
     p->tcph->th_seq = htonl(12);
     p->flow = &f;
 
-    SCMutexLock(&f.m);
+    FLOWLOCK_WRLOCK(&f);
     if (StreamTcpUTAddSegmentWithByte(&tv, ra_ctx, &ssn.client,  2, 'A', 5) == -1) {
         printf("failed to add segment 1: ");
         goto end;
@@ -7629,7 +7630,7 @@ static int StreamTcpReassembleInlineTest01(void)
 
     ret = 1;
 end:
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     FLOW_DESTROY(&f);
     UTHFreePacket(p);
     StreamTcpUTClearSession(&ssn);
@@ -7667,7 +7668,7 @@ static int StreamTcpReassembleInlineTest02(void)
     p->tcph->th_seq = htonl(12);
     p->flow = &f;
 
-    SCMutexLock(&f.m);
+    FLOWLOCK_WRLOCK(&f);
     if (StreamTcpUTAddSegmentWithByte(&tv, ra_ctx, &ssn.client,  2, 'A', 5) == -1) {
         printf("failed to add segment 1: ");
         goto end;
@@ -7720,7 +7721,7 @@ static int StreamTcpReassembleInlineTest02(void)
 
     ret = 1;
 end:
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     FLOW_DESTROY(&f);
     UTHFreePacket(p);
     StreamTcpUTClearSession(&ssn);
@@ -7762,7 +7763,7 @@ static int StreamTcpReassembleInlineTest03(void)
     p->flow = &f;
     p->flowflags |= FLOW_PKT_TOSERVER;
 
-    SCMutexLock(&f.m);
+    FLOWLOCK_WRLOCK(&f);
     if (StreamTcpUTAddSegmentWithByte(&tv, ra_ctx, &ssn.client,  2, 'A', 5) == -1) {
         printf("failed to add segment 1: ");
         goto end;
@@ -7817,7 +7818,7 @@ static int StreamTcpReassembleInlineTest03(void)
 
     ret = 1;
 end:
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     FLOW_DESTROY(&f);
     UTHFreePacket(p);
     StreamTcpUTClearSession(&ssn);
@@ -7859,7 +7860,7 @@ static int StreamTcpReassembleInlineTest04(void)
     p->flow = &f;
     p->flowflags |= FLOW_PKT_TOSERVER;
 
-    SCMutexLock(&f.m);
+    FLOWLOCK_WRLOCK(&f);
     if (StreamTcpUTAddSegmentWithByte(&tv, ra_ctx, &ssn.client,  2, 'A', 5) == -1) {
         printf("failed to add segment 1: ");
         goto end;
@@ -7914,7 +7915,7 @@ static int StreamTcpReassembleInlineTest04(void)
 
     ret = 1;
 end:
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     FLOW_DESTROY(&f);
     UTHFreePacket(p);
     StreamTcpUTClearSession(&ssn);
@@ -7950,7 +7951,7 @@ static int StreamTcpReassembleInlineTest05(void)
     p->tcph->th_seq = htonl(12);
     p->flow = &f;
 
-    SCMutexLock(&f.m);
+    FLOWLOCK_WRLOCK(&f);
     if (StreamTcpUTAddSegmentWithByte(&tv, ra_ctx, &ssn.client,  2, 'A', 5) == -1) {
         printf("failed to add segment 1: ");
         goto end;
@@ -7989,7 +7990,7 @@ static int StreamTcpReassembleInlineTest05(void)
 
     ret = 1;
 end:
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     FLOW_DESTROY(&f);
     UTHFreePacket(p);
     StreamTcpUTClearSession(&ssn);
@@ -8026,7 +8027,7 @@ static int StreamTcpReassembleInlineTest06(void)
     p->tcph->th_seq = htonl(12);
     p->flow = &f;
 
-    SCMutexLock(&f.m);
+    FLOWLOCK_WRLOCK(&f);
     if (StreamTcpUTAddSegmentWithByte(&tv, ra_ctx, &ssn.client,  2, 'A', 5) == -1) {
         printf("failed to add segment 1: ");
         goto end;
@@ -8088,7 +8089,7 @@ static int StreamTcpReassembleInlineTest06(void)
 
     ret = 1;
 end:
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     FLOW_DESTROY(&f);
     UTHFreePacket(p);
     StreamTcpUTClearSession(&ssn);
@@ -8129,7 +8130,7 @@ static int StreamTcpReassembleInlineTest07(void)
     p->flow = &f;
     p->flowflags |= FLOW_PKT_TOSERVER;
 
-    SCMutexLock(&f.m);
+    FLOWLOCK_WRLOCK(&f);
     if (StreamTcpUTAddSegmentWithByte(&tv, ra_ctx, &ssn.client,  2, 'A', 5) == -1) {
         printf("failed to add segment 1: ");
         goto end;
@@ -8191,7 +8192,7 @@ static int StreamTcpReassembleInlineTest07(void)
 
     ret = 1;
 end:
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     FLOW_DESTROY(&f);
     UTHFreePacket(p);
     StreamTcpUTClearSession(&ssn);
@@ -8235,7 +8236,7 @@ static int StreamTcpReassembleInlineTest08(void)
     p->flow = &f;
     p->flowflags |= FLOW_PKT_TOSERVER;
 
-    SCMutexLock(&f.m);
+    FLOWLOCK_WRLOCK(&f);
     if (StreamTcpUTAddSegmentWithByte(&tv, ra_ctx, &ssn.client,  2, 'A', 5) == -1) {
         printf("failed to add segment 1: ");
         goto end;
@@ -8305,7 +8306,7 @@ static int StreamTcpReassembleInlineTest08(void)
 
     ret = 1;
 end:
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     FLOW_DESTROY(&f);
     UTHFreePacket(p);
     StreamTcpUTClearSession(&ssn);
@@ -8350,7 +8351,7 @@ static int StreamTcpReassembleInlineTest09(void)
     p->flow = &f;
     p->flowflags |= FLOW_PKT_TOSERVER;
 
-    SCMutexLock(&f.m);
+    FLOWLOCK_WRLOCK(&f);
     if (StreamTcpUTAddSegmentWithByte(&tv, ra_ctx, &ssn.client,  2, 'A', 5) == -1) {
         printf("failed to add segment 1: ");
         goto end;
@@ -8425,7 +8426,7 @@ static int StreamTcpReassembleInlineTest09(void)
 
     ret = 1;
 end:
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     FLOW_DESTROY(&f);
     UTHFreePacket(p);
     StreamTcpUTClearSession(&ssn);
@@ -8473,7 +8474,7 @@ static int StreamTcpReassembleInlineTest10(void)
     p->flow = f;
     p->flowflags |= FLOW_PKT_TOSERVER;
 
-    SCMutexLock(&f->m);
+    FLOWLOCK_WRLOCK(f);
     if (StreamTcpUTAddSegmentWithPayload(&tv, ra_ctx, &ssn.server,  2, stream_payload1, 2) == -1) {
         printf("failed to add segment 1: ");
         goto end;
@@ -8518,7 +8519,7 @@ end:
     UTHFreePacket(p);
     StreamTcpUTClearSession(&ssn);
     StreamTcpUTDeinit(ra_ctx);
-    SCMutexUnlock(&f->m);
+    FLOWLOCK_UNLOCK(f);
     UTHFreeFlow(f);
     return ret;
 }
@@ -8550,7 +8551,7 @@ static int StreamTcpReassembleInsertTest01(void)
     p->tcph->th_seq = htonl(12);
     p->flow = &f;
 
-    SCMutexLock(&f.m);
+    FLOWLOCK_WRLOCK(&f);
     if (StreamTcpUTAddSegmentWithByte(&tv, ra_ctx, &ssn.client,  2, 'A', 5) == -1) {
         printf("failed to add segment 1: ");
         goto end;
@@ -8594,7 +8595,7 @@ static int StreamTcpReassembleInsertTest01(void)
     }
     ret = 1;
 end:
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     FLOW_DESTROY(&f);
     UTHFreePacket(p);
     StreamTcpUTClearSession(&ssn);
@@ -8697,67 +8698,125 @@ end:
 void StreamTcpReassembleRegisterTests(void)
 {
 #ifdef UNITTESTS
-    UtRegisterTest("StreamTcpReassembleTest01 -- BSD OS Before Reassembly Test", StreamTcpReassembleTest01, 1);
-    UtRegisterTest("StreamTcpReassembleTest02 -- BSD OS At Same Reassembly Test", StreamTcpReassembleTest02, 1);
-    UtRegisterTest("StreamTcpReassembleTest03 -- BSD OS After Reassembly Test", StreamTcpReassembleTest03, 1);
-    UtRegisterTest("StreamTcpReassembleTest04 -- BSD OS Complete Reassembly Test", StreamTcpReassembleTest04, 1);
-    UtRegisterTest("StreamTcpReassembleTest05 -- VISTA OS Before Reassembly Test", StreamTcpReassembleTest05, 1);
-    UtRegisterTest("StreamTcpReassembleTest06 -- VISTA OS At Same Reassembly Test", StreamTcpReassembleTest06, 1);
-    UtRegisterTest("StreamTcpReassembleTest07 -- VISTA OS After Reassembly Test", StreamTcpReassembleTest07, 1);
-    UtRegisterTest("StreamTcpReassembleTest08 -- VISTA OS Complete Reassembly Test", StreamTcpReassembleTest08, 1);
-    UtRegisterTest("StreamTcpReassembleTest09 -- LINUX OS Before Reassembly Test", StreamTcpReassembleTest09, 1);
-    UtRegisterTest("StreamTcpReassembleTest10 -- LINUX OS At Same Reassembly Test", StreamTcpReassembleTest10, 1);
-    UtRegisterTest("StreamTcpReassembleTest11 -- LINUX OS After Reassembly Test", StreamTcpReassembleTest11, 1);
-    UtRegisterTest("StreamTcpReassembleTest12 -- LINUX OS Complete Reassembly Test", StreamTcpReassembleTest12, 1);
-    UtRegisterTest("StreamTcpReassembleTest13 -- LINUX_OLD OS Before Reassembly Test", StreamTcpReassembleTest13, 1);
-    UtRegisterTest("StreamTcpReassembleTest14 -- LINUX_OLD At Same Reassembly Test", StreamTcpReassembleTest14, 1);
-    UtRegisterTest("StreamTcpReassembleTest15 -- LINUX_OLD OS After Reassembly Test", StreamTcpReassembleTest15, 1);
-    UtRegisterTest("StreamTcpReassembleTest16 -- LINUX_OLD OS Complete Reassembly Test", StreamTcpReassembleTest16, 1);
-    UtRegisterTest("StreamTcpReassembleTest17 -- SOLARIS OS Before Reassembly Test", StreamTcpReassembleTest17, 1);
-    UtRegisterTest("StreamTcpReassembleTest18 -- SOLARIS At Same Reassembly Test", StreamTcpReassembleTest18, 1);
-    UtRegisterTest("StreamTcpReassembleTest19 -- SOLARIS OS After Reassembly Test", StreamTcpReassembleTest19, 1);
-    UtRegisterTest("StreamTcpReassembleTest20 -- SOLARIS OS Complete Reassembly Test", StreamTcpReassembleTest20, 1);
-    UtRegisterTest("StreamTcpReassembleTest21 -- LAST OS Before Reassembly Test", StreamTcpReassembleTest21, 1);
-    UtRegisterTest("StreamTcpReassembleTest22 -- LAST OS At Same Reassembly Test", StreamTcpReassembleTest22, 1);
-    UtRegisterTest("StreamTcpReassembleTest23 -- LAST OS After Reassembly Test", StreamTcpReassembleTest23, 1);
-    UtRegisterTest("StreamTcpReassembleTest24 -- LAST OS Complete Reassembly Test", StreamTcpReassembleTest24, 1);
-    UtRegisterTest("StreamTcpReassembleTest25 -- Gap at Start Reassembly Test", StreamTcpReassembleTest25, 1);
-    UtRegisterTest("StreamTcpReassembleTest26 -- Gap at middle Reassembly Test", StreamTcpReassembleTest26, 1);
-    UtRegisterTest("StreamTcpReassembleTest27 -- Gap at after  Reassembly Test", StreamTcpReassembleTest27, 1);
-    UtRegisterTest("StreamTcpReassembleTest28 -- Gap at Start IDS missed packet Reassembly Test", StreamTcpReassembleTest28, 1);
-    UtRegisterTest("StreamTcpReassembleTest29 -- Gap at Middle IDS missed packet Reassembly Test", StreamTcpReassembleTest29, 1);
-    UtRegisterTest("StreamTcpReassembleTest30 -- Gap at End IDS missed packet Reassembly Test", StreamTcpReassembleTest30, 1);
-    UtRegisterTest("StreamTcpReassembleTest31 -- Fast Track Reassembly Test", StreamTcpReassembleTest31, 1);
-    UtRegisterTest("StreamTcpReassembleTest32 -- Bug test", StreamTcpReassembleTest32, 1);
-    UtRegisterTest("StreamTcpReassembleTest33 -- Bug test", StreamTcpReassembleTest33, 1);
-    UtRegisterTest("StreamTcpReassembleTest34 -- Bug test", StreamTcpReassembleTest34, 1);
-    UtRegisterTest("StreamTcpReassembleTest35 -- Bug56 test", StreamTcpReassembleTest35, 1);
-    UtRegisterTest("StreamTcpReassembleTest36 -- Bug57 test", StreamTcpReassembleTest36, 1);
-    UtRegisterTest("StreamTcpReassembleTest37 -- Bug76 test", StreamTcpReassembleTest37, 1);
-    UtRegisterTest("StreamTcpReassembleTest38 -- app proto test", StreamTcpReassembleTest38, 1);
-    UtRegisterTest("StreamTcpReassembleTest39 -- app proto test", StreamTcpReassembleTest39, 1);
-    UtRegisterTest("StreamTcpReassembleTest40 -- app proto test", StreamTcpReassembleTest40, 1);
-    UtRegisterTest("StreamTcpReassembleTest43 -- min smsg size test", StreamTcpReassembleTest43, 1);
-    UtRegisterTest("StreamTcpReassembleTest44 -- Memcap Test", StreamTcpReassembleTest44, 1);
-    UtRegisterTest("StreamTcpReassembleTest45 -- Depth Test", StreamTcpReassembleTest45, 1);
-    UtRegisterTest("StreamTcpReassembleTest46 -- Depth Test", StreamTcpReassembleTest46, 1);
-    UtRegisterTest("StreamTcpReassembleTest47 -- TCP Sequence Wraparound Test", StreamTcpReassembleTest47, 1);
+    UtRegisterTest("StreamTcpReassembleTest01 -- BSD OS Before Reassembly Test",
+                   StreamTcpReassembleTest01);
+    UtRegisterTest("StreamTcpReassembleTest02 -- BSD OS At Same Reassembly Test",
+                   StreamTcpReassembleTest02);
+    UtRegisterTest("StreamTcpReassembleTest03 -- BSD OS After Reassembly Test",
+                   StreamTcpReassembleTest03);
+    UtRegisterTest("StreamTcpReassembleTest04 -- BSD OS Complete Reassembly Test",
+                   StreamTcpReassembleTest04);
+    UtRegisterTest("StreamTcpReassembleTest05 -- VISTA OS Before Reassembly Test",
+                   StreamTcpReassembleTest05);
+    UtRegisterTest("StreamTcpReassembleTest06 -- VISTA OS At Same Reassembly Test",
+                   StreamTcpReassembleTest06);
+    UtRegisterTest("StreamTcpReassembleTest07 -- VISTA OS After Reassembly Test",
+                   StreamTcpReassembleTest07);
+    UtRegisterTest("StreamTcpReassembleTest08 -- VISTA OS Complete Reassembly Test",
+                   StreamTcpReassembleTest08);
+    UtRegisterTest("StreamTcpReassembleTest09 -- LINUX OS Before Reassembly Test",
+                   StreamTcpReassembleTest09);
+    UtRegisterTest("StreamTcpReassembleTest10 -- LINUX OS At Same Reassembly Test",
+                   StreamTcpReassembleTest10);
+    UtRegisterTest("StreamTcpReassembleTest11 -- LINUX OS After Reassembly Test",
+                   StreamTcpReassembleTest11);
+    UtRegisterTest("StreamTcpReassembleTest12 -- LINUX OS Complete Reassembly Test",
+                   StreamTcpReassembleTest12);
+    UtRegisterTest("StreamTcpReassembleTest13 -- LINUX_OLD OS Before Reassembly Test",
+                   StreamTcpReassembleTest13);
+    UtRegisterTest("StreamTcpReassembleTest14 -- LINUX_OLD At Same Reassembly Test",
+                   StreamTcpReassembleTest14);
+    UtRegisterTest("StreamTcpReassembleTest15 -- LINUX_OLD OS After Reassembly Test",
+                   StreamTcpReassembleTest15);
+    UtRegisterTest("StreamTcpReassembleTest16 -- LINUX_OLD OS Complete Reassembly Test",
+                   StreamTcpReassembleTest16);
+    UtRegisterTest("StreamTcpReassembleTest17 -- SOLARIS OS Before Reassembly Test",
+                   StreamTcpReassembleTest17);
+    UtRegisterTest("StreamTcpReassembleTest18 -- SOLARIS At Same Reassembly Test",
+                   StreamTcpReassembleTest18);
+    UtRegisterTest("StreamTcpReassembleTest19 -- SOLARIS OS After Reassembly Test",
+                   StreamTcpReassembleTest19);
+    UtRegisterTest("StreamTcpReassembleTest20 -- SOLARIS OS Complete Reassembly Test",
+                   StreamTcpReassembleTest20);
+    UtRegisterTest("StreamTcpReassembleTest21 -- LAST OS Before Reassembly Test",
+                   StreamTcpReassembleTest21);
+    UtRegisterTest("StreamTcpReassembleTest22 -- LAST OS At Same Reassembly Test",
+                   StreamTcpReassembleTest22);
+    UtRegisterTest("StreamTcpReassembleTest23 -- LAST OS After Reassembly Test",
+                   StreamTcpReassembleTest23);
+    UtRegisterTest("StreamTcpReassembleTest24 -- LAST OS Complete Reassembly Test",
+                   StreamTcpReassembleTest24);
+    UtRegisterTest("StreamTcpReassembleTest25 -- Gap at Start Reassembly Test",
+                   StreamTcpReassembleTest25);
+    UtRegisterTest("StreamTcpReassembleTest26 -- Gap at middle Reassembly Test",
+                   StreamTcpReassembleTest26);
+    UtRegisterTest("StreamTcpReassembleTest27 -- Gap at after  Reassembly Test",
+                   StreamTcpReassembleTest27);
+    UtRegisterTest("StreamTcpReassembleTest28 -- Gap at Start IDS missed packet Reassembly Test",
+                   StreamTcpReassembleTest28);
+    UtRegisterTest("StreamTcpReassembleTest29 -- Gap at Middle IDS missed packet Reassembly Test",
+                   StreamTcpReassembleTest29);
+    UtRegisterTest("StreamTcpReassembleTest30 -- Gap at End IDS missed packet Reassembly Test",
+                   StreamTcpReassembleTest30);
+    UtRegisterTest("StreamTcpReassembleTest31 -- Fast Track Reassembly Test",
+                   StreamTcpReassembleTest31);
+    UtRegisterTest("StreamTcpReassembleTest32 -- Bug test",
+                   StreamTcpReassembleTest32);
+    UtRegisterTest("StreamTcpReassembleTest33 -- Bug test",
+                   StreamTcpReassembleTest33);
+    UtRegisterTest("StreamTcpReassembleTest34 -- Bug test",
+                   StreamTcpReassembleTest34);
+    UtRegisterTest("StreamTcpReassembleTest35 -- Bug56 test",
+                   StreamTcpReassembleTest35);
+    UtRegisterTest("StreamTcpReassembleTest36 -- Bug57 test",
+                   StreamTcpReassembleTest36);
+    UtRegisterTest("StreamTcpReassembleTest37 -- Bug76 test",
+                   StreamTcpReassembleTest37);
+    UtRegisterTest("StreamTcpReassembleTest38 -- app proto test",
+                   StreamTcpReassembleTest38);
+    UtRegisterTest("StreamTcpReassembleTest39 -- app proto test",
+                   StreamTcpReassembleTest39);
+    UtRegisterTest("StreamTcpReassembleTest40 -- app proto test",
+                   StreamTcpReassembleTest40);
+    UtRegisterTest("StreamTcpReassembleTest43 -- min smsg size test",
+                   StreamTcpReassembleTest43);
+    UtRegisterTest("StreamTcpReassembleTest44 -- Memcap Test",
+                   StreamTcpReassembleTest44);
+    UtRegisterTest("StreamTcpReassembleTest45 -- Depth Test",
+                   StreamTcpReassembleTest45);
+    UtRegisterTest("StreamTcpReassembleTest46 -- Depth Test",
+                   StreamTcpReassembleTest46);
+    UtRegisterTest("StreamTcpReassembleTest47 -- TCP Sequence Wraparound Test",
+                   StreamTcpReassembleTest47);
 
-    UtRegisterTest("StreamTcpReassembleInlineTest01 -- inline RAW ra", StreamTcpReassembleInlineTest01, 1);
-    UtRegisterTest("StreamTcpReassembleInlineTest02 -- inline RAW ra 2", StreamTcpReassembleInlineTest02, 1);
-    UtRegisterTest("StreamTcpReassembleInlineTest03 -- inline RAW ra 3", StreamTcpReassembleInlineTest03, 1);
-    UtRegisterTest("StreamTcpReassembleInlineTest04 -- inline RAW ra 4", StreamTcpReassembleInlineTest04, 1);
-    UtRegisterTest("StreamTcpReassembleInlineTest05 -- inline RAW ra 5 GAP", StreamTcpReassembleInlineTest05, 1);
-    UtRegisterTest("StreamTcpReassembleInlineTest06 -- inline RAW ra 6 GAP", StreamTcpReassembleInlineTest06, 1);
-    UtRegisterTest("StreamTcpReassembleInlineTest07 -- inline RAW ra 7 GAP", StreamTcpReassembleInlineTest07, 1);
-    UtRegisterTest("StreamTcpReassembleInlineTest08 -- inline RAW ra 8 cleanup", StreamTcpReassembleInlineTest08, 1);
-    UtRegisterTest("StreamTcpReassembleInlineTest09 -- inline RAW ra 9 GAP cleanup", StreamTcpReassembleInlineTest09, 1);
+    UtRegisterTest("StreamTcpReassembleInlineTest01 -- inline RAW ra",
+                   StreamTcpReassembleInlineTest01);
+    UtRegisterTest("StreamTcpReassembleInlineTest02 -- inline RAW ra 2",
+                   StreamTcpReassembleInlineTest02);
+    UtRegisterTest("StreamTcpReassembleInlineTest03 -- inline RAW ra 3",
+                   StreamTcpReassembleInlineTest03);
+    UtRegisterTest("StreamTcpReassembleInlineTest04 -- inline RAW ra 4",
+                   StreamTcpReassembleInlineTest04);
+    UtRegisterTest("StreamTcpReassembleInlineTest05 -- inline RAW ra 5 GAP",
+                   StreamTcpReassembleInlineTest05);
+    UtRegisterTest("StreamTcpReassembleInlineTest06 -- inline RAW ra 6 GAP",
+                   StreamTcpReassembleInlineTest06);
+    UtRegisterTest("StreamTcpReassembleInlineTest07 -- inline RAW ra 7 GAP",
+                   StreamTcpReassembleInlineTest07);
+    UtRegisterTest("StreamTcpReassembleInlineTest08 -- inline RAW ra 8 cleanup",
+                   StreamTcpReassembleInlineTest08);
+    UtRegisterTest("StreamTcpReassembleInlineTest09 -- inline RAW ra 9 GAP cleanup",
+                   StreamTcpReassembleInlineTest09);
 
-    UtRegisterTest("StreamTcpReassembleInlineTest10 -- inline APP ra 10", StreamTcpReassembleInlineTest10, 1);
+    UtRegisterTest("StreamTcpReassembleInlineTest10 -- inline APP ra 10",
+                   StreamTcpReassembleInlineTest10);
 
-    UtRegisterTest("StreamTcpReassembleInsertTest01 -- insert with overlap", StreamTcpReassembleInsertTest01, 1);
-    UtRegisterTest("StreamTcpReassembleInsertTest02 -- insert with overlap", StreamTcpReassembleInsertTest02, 1);
-    UtRegisterTest("StreamTcpReassembleInsertTest03 -- insert with overlap", StreamTcpReassembleInsertTest03, 1);
+    UtRegisterTest("StreamTcpReassembleInsertTest01 -- insert with overlap",
+                   StreamTcpReassembleInsertTest01);
+    UtRegisterTest("StreamTcpReassembleInsertTest02 -- insert with overlap",
+                   StreamTcpReassembleInsertTest02);
+    UtRegisterTest("StreamTcpReassembleInsertTest03 -- insert with overlap",
+                   StreamTcpReassembleInsertTest03);
 
     StreamTcpInlineRegisterTests();
     StreamTcpUtilRegisterTests();

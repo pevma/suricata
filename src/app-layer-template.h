@@ -15,6 +15,12 @@
  * 02110-1301, USA.
  */
 
+/**
+ * \file
+ *
+ * \author FirstName LastName <yourname@domain>
+ */
+
 #ifndef __APP_LAYER_TEMPLATE_H__
 #define __APP_LAYER_TEMPLATE_H__
 
@@ -36,6 +42,9 @@ typedef struct TemplateTransaction_ {
 
     uint8_t *request_buffer;
     uint32_t request_buffer_len;
+
+    /* flags indicating which loggers that have logged */
+    uint32_t logged;
 
     uint8_t *response_buffer;
     uint32_t response_buffer_len;

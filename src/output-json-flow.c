@@ -246,7 +246,7 @@ static void JsonFlowLogJSON(JsonFlowLogThread *aft, json_t *js, Flow *f)
 
         TcpSession *ssn = f->protoctx;
 
-        char hexflags[3] = "";
+        char hexflags[3];
         snprintf(hexflags, sizeof(hexflags), "%02x",
                 ssn ? ssn->tcp_packet_flags : 0);
         json_object_set_new(tjs, "tcp_flags", json_string(hexflags));
@@ -346,7 +346,7 @@ OutputCtx *OutputFlowLogInit(ConfNode *conf)
     SCLogInfo("hi");
     LogFileCtx *file_ctx = LogFileNewCtx();
     if(file_ctx == NULL) {
-        SCLogError(SC_ERR_HTTP_LOG_GENERIC, "couldn't create new file_ctx");
+        SCLogError(SC_ERR_FLOW_LOG_GENERIC, "couldn't create new file_ctx");
         return NULL;
     }
 
@@ -415,7 +415,7 @@ static TmEcode JsonFlowLogThreadInit(ThreadVars *t, void *initdata, void **data)
 
     if(initdata == NULL)
     {
-        SCLogDebug("Error getting context for HTTPLog.  \"initdata\" argument NULL");
+        SCLogDebug("Error getting context for EveLogFlow.  \"initdata\" argument NULL");
         SCFree(aft);
         return TM_ECODE_FAILED;
     }
@@ -448,36 +448,24 @@ static TmEcode JsonFlowLogThreadDeinit(ThreadVars *t, void *data)
     return TM_ECODE_OK;
 }
 
-void TmModuleJsonFlowLogRegister (void)
+void JsonFlowLogRegister (void)
 {
-    tmm_modules[TMM_JSONFLOWLOG].name = "JsonFlowLog";
-    tmm_modules[TMM_JSONFLOWLOG].ThreadInit = JsonFlowLogThreadInit;
-    tmm_modules[TMM_JSONFLOWLOG].ThreadDeinit = JsonFlowLogThreadDeinit;
-    tmm_modules[TMM_JSONFLOWLOG].RegisterTests = NULL;
-    tmm_modules[TMM_JSONFLOWLOG].cap_flags = 0;
-    tmm_modules[TMM_JSONFLOWLOG].flags = TM_FLAG_LOGAPI_TM;
-
     /* register as separate module */
-    OutputRegisterFlowModule("JsonFlowLog", "flow-json-log",
-            OutputFlowLogInit, JsonFlowLogger);
+    OutputRegisterFlowModule(LOGGER_JSON_FLOW, "JsonFlowLog", "flow-json-log",
+        OutputFlowLogInit, JsonFlowLogger, JsonFlowLogThreadInit,
+        JsonFlowLogThreadDeinit, NULL);
 
     /* also register as child of eve-log */
-    OutputRegisterFlowSubModule("eve-log", "JsonFlowLog", "eve-log.flow",
-            OutputFlowLogInitSub, JsonFlowLogger);
+    OutputRegisterFlowSubModule(LOGGER_JSON_FLOW, "eve-log", "JsonFlowLog",
+        "eve-log.flow", OutputFlowLogInitSub, JsonFlowLogger,
+        JsonFlowLogThreadInit, JsonFlowLogThreadDeinit, NULL);
 }
 
 #else
 
-static TmEcode OutputJsonThreadInit(ThreadVars *t, void *initdata, void **data)
+void JsonFlowLogRegister (void)
 {
-    SCLogInfo("Can't init JSON output - JSON support was disabled during build.");
-    return TM_ECODE_FAILED;
-}
-
-void TmModuleJsonFlowLogRegister (void)
-{
-    tmm_modules[TMM_JSONFLOWLOG].name = "JsonFlowLog";
-    tmm_modules[TMM_JSONFLOWLOG].ThreadInit = OutputJsonThreadInit;
+    SCLogInfo("Can't register JSON output - JSON support was disabled during build.");
 }
 
 #endif

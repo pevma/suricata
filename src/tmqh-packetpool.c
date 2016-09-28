@@ -307,6 +307,7 @@ void PacketPoolReturnPacket(Packet *p)
         PktPool *pending_pool = my_pool->pending_pool;
         if (pending_pool == NULL) {
             /* No pending packet, so store the current packet. */
+            p->next = NULL;
             my_pool->pending_pool = pool;
             my_pool->pending_head = p;
             my_pool->pending_tail = p;
@@ -393,9 +394,9 @@ void PacketPoolInit(void)
         }
         PacketPoolStorePacket(p);
     }
-    SCLogInfo("preallocated %"PRIiMAX" packets. Total memory %"PRIuMAX"",
-            max_pending_packets, (uintmax_t)(max_pending_packets*SIZE_OF_PACKET));
 
+    //SCLogInfo("preallocated %"PRIiMAX" packets. Total memory %"PRIuMAX"",
+    //        max_pending_packets, (uintmax_t)(max_pending_packets*SIZE_OF_PACKET));
 }
 
 void PacketPoolDestroy(void)
@@ -446,15 +447,6 @@ void TmqhOutputPacketpool(ThreadVars *t, Packet *p)
 
     SCEnter();
     SCLogDebug("Packet %p, p->root %p, alloced %s", p, p->root, p->flags & PKT_ALLOC ? "true" : "false");
-
-    /** \todo make this a callback
-     *  Release tcp segments. Done here after alerting can use them. */
-    if (p->flow != NULL && p->proto == IPPROTO_TCP) {
-        SCMutexLock(&p->flow->m);
-        StreamTcpPruneSession(p->flow, p->flowflags & FLOW_PKT_TOSERVER ?
-                STREAM_TOSERVER : STREAM_TOCLIENT);
-        SCMutexUnlock(&p->flow->m);
-    }
 
     if (IS_TUNNEL_PKT(p)) {
         SCLogDebug("Packet %p is a tunnel packet: %s",

@@ -54,7 +54,6 @@ void DetectPktDataRegister(void)
     sigmatch_table[DETECT_PKT_DATA].name = "pkt_data";
     sigmatch_table[DETECT_PKT_DATA].Match = NULL;
     sigmatch_table[DETECT_PKT_DATA].AppLayerMatch = NULL;
-    sigmatch_table[DETECT_PKT_DATA].alproto = ALPROTO_HTTP;
     sigmatch_table[DETECT_PKT_DATA].Setup = DetectPktDataSetup;
     sigmatch_table[DETECT_PKT_DATA].Free  = NULL;
     sigmatch_table[DETECT_PKT_DATA].RegisterTests = DetectPktDataTestRegister;
@@ -146,7 +145,7 @@ end:
 static void DetectPktDataTestRegister(void)
 {
 #ifdef UNITTESTS
-    UtRegisterTest("DetectPktDataTest01", DetectPktDataTest01, 1);
+    UtRegisterTest("DetectPktDataTest01", DetectPktDataTest01);
 #endif
 }
 

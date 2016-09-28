@@ -47,7 +47,7 @@
 #include "util-unittest-helper.h"
 #include "stream-tcp.h"
 
-#define DETECT_DCE_IFACE_PCRE_PARSE_ARGS "^\\s*([0-9a-zA-Z]{8}-[0-9a-zA-Z]{4}-[0-9a-zA-Z]{4}-[0-9a-zA-Z]{4}-[0-9a-zA-Z]{12})(?:\\s*,(<|>|=|!)([0-9]{1,5}))?(?:\\s*,(any_frag))?\\s*$"
+#define PARSE_REGEX "^\\s*([0-9a-zA-Z]{8}-[0-9a-zA-Z]{4}-[0-9a-zA-Z]{4}-[0-9a-zA-Z]{4}-[0-9a-zA-Z]{12})(?:\\s*,(<|>|=|!)([0-9]{1,5}))?(?:\\s*,(any_frag))?\\s*$"
 
 static pcre *parse_regex = NULL;
 static pcre_extra *parse_regex_study = NULL;
@@ -62,12 +62,7 @@ void DetectDceIfaceFree(void *);
  */
 void DetectDceIfaceRegister(void)
 {
-    const char *eb;
-    int eo;
-    int opts = 0;
-
     sigmatch_table[DETECT_DCE_IFACE].name = "dce_iface";
-    sigmatch_table[DETECT_DCE_IFACE].alproto = ALPROTO_DCERPC;
     sigmatch_table[DETECT_DCE_IFACE].Match = NULL;
     sigmatch_table[DETECT_DCE_IFACE].AppLayerMatch = DetectDceIfaceMatch;
     sigmatch_table[DETECT_DCE_IFACE].Setup = DetectDceIfaceSetup;
@@ -76,25 +71,7 @@ void DetectDceIfaceRegister(void)
 
     sigmatch_table[DETECT_DCE_IFACE].flags |= SIGMATCH_PAYLOAD;
 
-    parse_regex = pcre_compile(DETECT_DCE_IFACE_PCRE_PARSE_ARGS, opts, &eb,
-                               &eo, NULL);
-    if (parse_regex == NULL) {
-        SCLogDebug("pcre compile of \"%s\" failed at offset %" PRId32 ": %s",
-                   DETECT_DCE_IFACE_PCRE_PARSE_ARGS, eo, eb);
-        goto error;
-    }
-
-    parse_regex_study = pcre_study(parse_regex, 0, &eb);
-    if (eb != NULL) {
-        SCLogDebug("pcre study failed: %s", eb);
-        goto error;
-    }
-
-    return;
-
- error:
-    /* we need to handle error?! */
-    return;
+    DetectSetupParseRegexes(PARSE_REGEX, &parse_regex, &parse_regex_study);
 }
 
 /**
@@ -358,12 +335,12 @@ static int DetectDceIfaceSetup(DetectEngineCtx *de_ctx, Signature *s, char *arg)
     sm->type = DETECT_DCE_IFACE;
     sm->ctx = (void *)did;
 
-    SigMatchAppendSMToList(s, sm, DETECT_SM_LIST_AMATCH);
-
     if (s->alproto != ALPROTO_UNKNOWN && s->alproto != ALPROTO_DCERPC) {
         SCLogError(SC_ERR_CONFLICTING_RULE_KEYWORDS, "rule contains conflicting keywords.");
         goto error;
     }
+
+    SigMatchAppendSMToList(s, sm, DETECT_SM_LIST_AMATCH);
 
     s->alproto = ALPROTO_DCERPC;
     /* Flagged the signature as to inspect the app layer data */
@@ -917,15 +894,16 @@ static int DetectDceIfaceTestParse12(void)
 
     SCLogDebug("handling to_server chunk");
 
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOSERVER | STREAM_START,
-                            dcerpc_bind, dcerpc_bind_len);
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOSERVER | STREAM_START, dcerpc_bind,
+                            dcerpc_bind_len);
     if (r != 0) {
         SCLogDebug("AppLayerParse for dcerpc failed.  Returned %" PRId32, r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     dcerpc_state = f.alstate;
     if (dcerpc_state == NULL) {
@@ -943,15 +921,16 @@ static int DetectDceIfaceTestParse12(void)
 
     SCLogDebug("handling to_client chunk");
 
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOCLIENT, dcerpc_bindack,
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOCLIENT, dcerpc_bindack,
                             dcerpc_bindack_len);
     if (r != 0) {
         SCLogDebug("AppLayerParse for dcerpc failed.  Returned %" PRId32, r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     /* do detect */
     SigMatchSignatures(&th_v, de_ctx, det_ctx, p);
@@ -961,15 +940,16 @@ static int DetectDceIfaceTestParse12(void)
         goto end;
     }
 
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOCLIENT, dcerpc_request,
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOCLIENT, dcerpc_request,
                             dcerpc_request_len);
     if (r != 0) {
         SCLogDebug("AppLayerParse for dcerpc failed.  Returned %" PRId32, r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     /* do detect */
     SigMatchSignatures(&th_v, de_ctx, det_ctx, p);
@@ -1423,15 +1403,16 @@ static int DetectDceIfaceTestParse14(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&th_v, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOSERVER | STREAM_START,
-                            dcerpc_bind, dcerpc_bind_len);
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOSERVER | STREAM_START, dcerpc_bind,
+                            dcerpc_bind_len);
     if (r != 0) {
         SCLogDebug("AppLayerParse for dcerpc failed.  Returned %" PRId32, r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     dcerpc_state = f.alstate;
     if (dcerpc_state == NULL) {
@@ -1445,15 +1426,16 @@ static int DetectDceIfaceTestParse14(void)
     if (PacketAlertCheck(p, 1))
         goto end;
 
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOCLIENT, dcerpc_bindack,
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOCLIENT, dcerpc_bindack,
                             dcerpc_bindack_len);
     if (r != 0) {
         SCLogDebug("AppLayerParse for dcerpc failed.  Returned %" PRId32, r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     /* do detect */
     SigMatchSignatures(&th_v, de_ctx, det_ctx, p);
@@ -1463,15 +1445,16 @@ static int DetectDceIfaceTestParse14(void)
         goto end;
     }
 
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOCLIENT, dcerpc_request,
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOCLIENT, dcerpc_request,
                             dcerpc_request_len);
     if (r != 0) {
         SCLogDebug("AppLayerParse for dcerpc failed.  Returned %" PRId32, r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     /* do detect */
     SigMatchSignatures(&th_v, de_ctx, det_ctx, p);
@@ -1633,15 +1616,16 @@ static int DetectDceIfaceTestParse15(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&th_v, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOSERVER | STREAM_START,
-                            dcerpc_bind, dcerpc_bind_len);
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOSERVER | STREAM_START, dcerpc_bind,
+                            dcerpc_bind_len);
     if (r != 0) {
         SCLogDebug("AppLayerParse for dcerpc failed.  Returned %" PRId32, r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     dcerpc_state = f.alstate;
     if (dcerpc_state == NULL) {
@@ -1657,15 +1641,16 @@ static int DetectDceIfaceTestParse15(void)
     if (PacketAlertCheck(p, 2))
         goto end;
 
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOCLIENT, dcerpc_bindack,
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOCLIENT, dcerpc_bindack,
                             dcerpc_bindack_len);
     if (r != 0) {
         SCLogDebug("AppLayerParse for dcerpc failed.  Returned %" PRId32, r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     /* do detect */
     SigMatchSignatures(&th_v, de_ctx, det_ctx, p);
@@ -1679,15 +1664,16 @@ static int DetectDceIfaceTestParse15(void)
         goto end;
     }
 
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOSERVER, dcerpc_alter_context,
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOSERVER, dcerpc_alter_context,
                             dcerpc_alter_context_len);
     if (r != 0) {
         SCLogDebug("AppLayerParse for dcerpc failed.  Returned %" PRId32, r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     /* do detect */
     SigMatchSignatures(&th_v, de_ctx, det_ctx, p);
@@ -1701,15 +1687,16 @@ static int DetectDceIfaceTestParse15(void)
         goto end;
     }
 
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOCLIENT, dcerpc_alter_context_resp,
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOCLIENT, dcerpc_alter_context_resp,
                             dcerpc_alter_context_resp_len);
     if (r != 0) {
         SCLogDebug("AppLayerParse for dcerpc failed.  Returned %" PRId32, r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     /* do detect */
     SigMatchSignatures(&th_v, de_ctx, det_ctx, p);
@@ -1723,15 +1710,16 @@ static int DetectDceIfaceTestParse15(void)
         goto end;
     }
 
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOSERVER, dcerpc_request1,
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOSERVER, dcerpc_request1,
                             dcerpc_request1_len);
     if (r != 0) {
         SCLogDebug("AppLayerParse for dcerpc failed.  Returned %" PRId32, r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     /* do detect */
     SigMatchSignatures(&th_v, de_ctx, det_ctx, p);
@@ -1745,15 +1733,16 @@ static int DetectDceIfaceTestParse15(void)
         goto end;
     }
 
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOCLIENT, dcerpc_response1,
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOCLIENT, dcerpc_response1,
                             dcerpc_response1_len);
     if (r != 0) {
         SCLogDebug("AppLayerParse for dcerpc failed.  Returned %" PRId32, r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     /* do detect */
     SigMatchSignatures(&th_v, de_ctx, det_ctx, p);
@@ -1767,15 +1756,16 @@ static int DetectDceIfaceTestParse15(void)
         goto end;
     }
 
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOSERVER, dcerpc_request2,
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOSERVER, dcerpc_request2,
                             dcerpc_request2_len);
     if (r != 0) {
         SCLogDebug("AppLayerParse for dcerpc failed.  Returned %" PRId32, r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     /* do detect */
     SigMatchSignatures(&th_v, de_ctx, det_ctx, p);
@@ -1812,25 +1802,25 @@ void DetectDceIfaceRegisterTests(void)
 {
 
 #ifdef UNITTESTS
-    UtRegisterTest("DetectDceIfaceTestParse01", DetectDceIfaceTestParse01, 1);
-    UtRegisterTest("DetectDceIfaceTestParse02", DetectDceIfaceTestParse02, 1);
-    UtRegisterTest("DetectDceIfaceTestParse03", DetectDceIfaceTestParse03, 1);
-    UtRegisterTest("DetectDceIfaceTestParse04", DetectDceIfaceTestParse04, 1);
-    UtRegisterTest("DetectDceIfaceTestParse05", DetectDceIfaceTestParse05, 1);
-    UtRegisterTest("DetectDceIfaceTestParse06", DetectDceIfaceTestParse06, 1);
-    UtRegisterTest("DetectDceIfaceTestParse07", DetectDceIfaceTestParse07, 1);
-    UtRegisterTest("DetectDceIfaceTestParse08", DetectDceIfaceTestParse08, 1);
-    UtRegisterTest("DetectDceIfaceTestParse09", DetectDceIfaceTestParse09, 1);
-    UtRegisterTest("DetectDceIfaceTestParse10", DetectDceIfaceTestParse10, 1);
-    UtRegisterTest("DetectDceIfaceTestParse11", DetectDceIfaceTestParse11, 1);
-    UtRegisterTest("DetectDceIfaceTestParse12", DetectDceIfaceTestParse12, 1);
+    UtRegisterTest("DetectDceIfaceTestParse01", DetectDceIfaceTestParse01);
+    UtRegisterTest("DetectDceIfaceTestParse02", DetectDceIfaceTestParse02);
+    UtRegisterTest("DetectDceIfaceTestParse03", DetectDceIfaceTestParse03);
+    UtRegisterTest("DetectDceIfaceTestParse04", DetectDceIfaceTestParse04);
+    UtRegisterTest("DetectDceIfaceTestParse05", DetectDceIfaceTestParse05);
+    UtRegisterTest("DetectDceIfaceTestParse06", DetectDceIfaceTestParse06);
+    UtRegisterTest("DetectDceIfaceTestParse07", DetectDceIfaceTestParse07);
+    UtRegisterTest("DetectDceIfaceTestParse08", DetectDceIfaceTestParse08);
+    UtRegisterTest("DetectDceIfaceTestParse09", DetectDceIfaceTestParse09);
+    UtRegisterTest("DetectDceIfaceTestParse10", DetectDceIfaceTestParse10);
+    UtRegisterTest("DetectDceIfaceTestParse11", DetectDceIfaceTestParse11);
+    UtRegisterTest("DetectDceIfaceTestParse12", DetectDceIfaceTestParse12);
     /* Disabled because of bug_753.  Would be enabled, once we rewrite
      * dce parser */
 #if 0
     UtRegisterTest("DetectDceIfaceTestParse13", DetectDceIfaceTestParse13, 1);
 #endif
-    UtRegisterTest("DetectDceIfaceTestParse14", DetectDceIfaceTestParse14, 1);
-    UtRegisterTest("DetectDceIfaceTestParse15", DetectDceIfaceTestParse15, 1);
+    UtRegisterTest("DetectDceIfaceTestParse14", DetectDceIfaceTestParse14);
+    UtRegisterTest("DetectDceIfaceTestParse15", DetectDceIfaceTestParse15);
 #endif
 
     return;

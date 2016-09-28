@@ -52,11 +52,14 @@ alert pkthdr any any -> any any (msg:"SURICATA ICMPv4 unknown code"; decode-even
 alert pkthdr any any -> any any (msg:"SURICATA ICMPv4 truncated packet"; decode-event:icmpv4.ipv4_trunc_pkt; sid:2200026; rev:1;)
 alert pkthdr any any -> any any (msg:"SURICATA ICMPv4 unknown version"; decode-event:icmpv4.ipv4_unknown_ver; sid:2200027; rev:1;)
 alert pkthdr any any -> any any (msg:"SURICATA ICMPv6 packet too small"; decode-event:icmpv6.pkt_too_small; sid:2200028; rev:1;)
-alert pkthdr any any -> any any (msg:"SURICATA ICMPv6 unknown type"; decode-event:icmpv6.unknown_type; sid:2200029; rev:1;)
+# uncomment the following sginature if you plan to update suricata code to support more ICMPv6 type
+#alert pkthdr any any -> any any (msg:"SURICATA ICMPv6 unknown type"; decode-event:icmpv6.unknown_type; sid:2200029; rev:1;)
 alert pkthdr any any -> any any (msg:"SURICATA ICMPv6 unknown code"; decode-event:icmpv6.unknown_code; sid:2200030; rev:1;)
 alert pkthdr any any -> any any (msg:"SURICATA ICMPv6 truncated packet"; decode-event:icmpv6.ipv6_trunc_pkt; sid:2200031; rev:1;)
 alert pkthdr any any -> any any (msg:"SURICATA ICMPv6 unknown version"; decode-event:icmpv6.ipv6_unknown_version; sid:2200032; rev:1;)
 alert pkthdr any any -> any any (msg:"SURICATA ICMPv6 MLD hop limit not 1"; decode-event:icmpv6.mld_message_with_invalid_hl; sid:2200102; rev:1;)
+alert pkthdr any any -> any any (msg:"SURICATA ICMPv6 unassigned type"; decode-event:icmpv6.unassigned_type; sid:2200108; rev:1;)
+alert pkthdr any any -> any any (msg:"SURICATA ICMPv6 private experimentation type"; decode-event:icmpv6.experimentation_type; sid:2200109; rev:1;)
 alert pkthdr any any -> any any (msg:"SURICATA TCP packet too small"; decode-event:tcp.pkt_too_small; sid:2200033; rev:1;)
 alert pkthdr any any -> any any (msg:"SURICATA TCP header length too small"; decode-event:tcp.hlen_too_small; sid:2200034; rev:1;)
 alert pkthdr any any -> any any (msg:"SURICATA TCP invalid option length"; decode-event:tcp.invalid_optlen; sid:2200035; rev:1;)
@@ -96,9 +99,9 @@ alert pkthdr any any -> any any (msg:"SURICATA VLAN unknown type"; decode-event:
 alert pkthdr any any -> any any (msg:"SURICATA VLAN too many layers"; decode-event:vlan.too_many_layers; sid:2200091; rev:1;)
 
 alert pkthdr any any -> any any (msg:"SURICATA IP raw invalid IP version "; decode-event:ipraw.invalid_ip_version; sid:2200068; rev:1;)
-alert pkthdr any any -> any any (msg:"SURICATA FRAG IPv4 Packet size too large"; decode-event:ipv4.frag_too_large; sid:2200069; rev:1;)
+alert pkthdr any any -> any any (msg:"SURICATA FRAG IPv4 Packet size too large"; decode-event:ipv4.frag_pkt_too_large; sid:2200069; rev:2;)
 alert pkthdr any any -> any any (msg:"SURICATA FRAG IPv4 Fragmentation overlap"; decode-event:ipv4.frag_overlap; sid:2200070; rev:1;)
-alert pkthdr any any -> any any (msg:"SURICATA FRAG IPv6 Packet size too large"; decode-event:ipv6.frag_too_large; sid:2200071; rev:1;)
+alert pkthdr any any -> any any (msg:"SURICATA FRAG IPv6 Packet size too large"; decode-event:ipv6.frag_pkt_too_large; sid:2200071; rev:2;)
 alert pkthdr any any -> any any (msg:"SURICATA FRAG IPv6 Fragmentation overlap"; decode-event:ipv6.frag_overlap; sid:2200072; rev:1;)
 
 # checksum rules
@@ -118,6 +121,7 @@ alert pkthdr any any -> any any (msg:"SURICATA IPv6-in-IPv6 packet too short"; d
 alert pkthdr any any -> any any (msg:"SURICATA IPv6-in-IPv6 invalid protocol"; decode-event:ipv6.ipv6_in_ipv6_wrong_version; sid:2200085; rev:1;)
 
 # MPLS rules
+alert pkthdr any any -> any any (msg:"SURICATA MPLS header too small"; decode-event:mpls.header_too_small; sid:2200111; rev:1;)
 alert pkthdr any any -> any any (msg:"SURICATA MPLS bad router alert label"; decode-event:mpls.bad_label_router_alert; sid: 2200098; rev:1;)
 alert pkthdr any any -> any any (msg:"SURICATA MPLS bad implicit null label"; decode-event:mpls.bad_label_implicit_null; sid: 2200099; rev:1;)
 alert pkthdr any any -> any any (msg:"SURICATA MPLS reserved label"; decode-event:mpls.bad_label_reserved; sid: 2200100; rev:1;)
@@ -134,5 +138,8 @@ alert pkthdr any any -> any any (msg:"SURICATA ERSPAN pkt too small"; decode-eve
 alert pkthdr any any -> any any (msg:"SURICATA ERSPAN unsupported version"; decode-event:erspan.unsupported_version; sid: 2200106; rev:1;)
 alert pkthdr any any -> any any (msg:"SURICATA ERSPAN too many vlan layers"; decode-event:erspan.too_many_vlan_layers; sid: 2200107; rev:1;)
 
-# next sid is 2200108
+# Cisco Fabric Path/DCE
+alert pkthdr any any -> any any (msg:"SURICATA DCE packet too small"; decode-event:dce.pkt_too_small; sid:2200110; rev:1;)
+
+# next sid is 2200112
 

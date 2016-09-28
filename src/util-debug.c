@@ -55,6 +55,8 @@ SCEnumCharMap sc_log_level_map[ ] = {
     { "Warning",        SC_LOG_WARNING },
     { "Notice",         SC_LOG_NOTICE },
     { "Info",           SC_LOG_INFO },
+    { "Perf",           SC_LOG_PERF },
+    { "Config",         SC_LOG_CONFIG },
     { "Debug",          SC_LOG_DEBUG },
     { NULL,             -1 }
 };
@@ -475,8 +477,12 @@ static SCError SCLogMessageGetBuffer(
         }
     }
 
-    char *xyellow = error_code > SC_OK ? yellow : "";
-    cw = snprintf(temp, SC_LOG_MAX_LOG_MSG_LEN - (temp - buffer), "%s%s%s", xyellow, message, reset);
+    char *hi = "";
+    if (error_code > SC_OK)
+        hi = red;
+    else if (log_level <= SC_LOG_NOTICE)
+        hi = yellow;
+    cw = snprintf(temp, SC_LOG_MAX_LOG_MSG_LEN - (temp - buffer), "%s%s%s", hi, message, reset);
     if (cw < 0)
         goto error;
     temp += cw;
@@ -713,6 +719,7 @@ error:
         fclose(iface_ctx->file_d);
         iface_ctx->file_d = NULL;
     }
+    SCFree(iface_ctx);
     return NULL;
 }
 
@@ -1637,11 +1644,11 @@ void SCLogRegisterTests()
 
 #ifdef UNITTESTS
 
-    UtRegisterTest("SCLogTestInit01", SCLogTestInit01, 1);
-    UtRegisterTest("SCLogTestInit02", SCLogTestInit02, 1);
-    UtRegisterTest("SCLogTestInit03", SCLogTestInit03, 1);
-    UtRegisterTest("SCLogTestInit04", SCLogTestInit04, 1);
-    UtRegisterTest("SCLogTestInit05", SCLogTestInit05, 1);
+    UtRegisterTest("SCLogTestInit01", SCLogTestInit01);
+    UtRegisterTest("SCLogTestInit02", SCLogTestInit02);
+    UtRegisterTest("SCLogTestInit03", SCLogTestInit03);
+    UtRegisterTest("SCLogTestInit04", SCLogTestInit04);
+    UtRegisterTest("SCLogTestInit05", SCLogTestInit05);
 
 #endif /* UNITTESTS */
 

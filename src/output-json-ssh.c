@@ -99,7 +99,6 @@ static int JsonSshLogger(ThreadVars *tv, void *thread_data, const Packet *p)
     }
 
     /* check if we have SSH state or not */
-    FLOWLOCK_WRLOCK(p->flow);
     uint16_t proto = FlowGetAppProtocol(p->flow);
     if (proto != ALPROTO_SSH)
         goto end;
@@ -136,7 +135,6 @@ static int JsonSshLogger(ThreadVars *tv, void *thread_data, const Packet *p)
     /* we only log the state once */
     ssh_state->cli_hdr.flags |= SSH_FLAG_STATE_LOGGED;
 end:
-    FLOWLOCK_UNLOCK(p->flow);
     return 0;
 }
 
@@ -150,7 +148,7 @@ static TmEcode JsonSshLogThreadInit(ThreadVars *t, void *initdata, void **data)
 
     if(initdata == NULL)
     {
-        SCLogDebug("Error getting context for HTTPLog.  \"initdata\" argument NULL");
+        SCLogDebug("Error getting context for EveLogSSH.  \"initdata\" argument NULL");
         SCFree(aft);
         return TM_ECODE_FAILED;
     }
@@ -205,7 +203,7 @@ OutputCtx *OutputSshLogInit(ConfNode *conf)
 
     LogFileCtx *file_ctx = LogFileNewCtx();
     if(file_ctx == NULL) {
-        SCLogError(SC_ERR_HTTP_LOG_GENERIC, "couldn't create new file_ctx");
+        SCLogError(SC_ERR_SSH_LOG_GENERIC, "couldn't create new file_ctx");
         return NULL;
     }
 
@@ -286,7 +284,6 @@ static int JsonSshCondition(ThreadVars *tv, const Packet *p)
         return FALSE;
     }
 
-    FLOWLOCK_RDLOCK(p->flow);
     uint16_t proto = FlowGetAppProtocol(p->flow);
     if (proto != ALPROTO_SSH)
         goto dontlog;
@@ -307,43 +304,29 @@ static int JsonSshCondition(ThreadVars *tv, const Packet *p)
 
     /* todo: logic to log once */
 
-    FLOWLOCK_UNLOCK(p->flow);
     return TRUE;
 dontlog:
-    FLOWLOCK_UNLOCK(p->flow);
     return FALSE;
 }
 
-void TmModuleJsonSshLogRegister (void)
+void JsonSshLogRegister (void)
 {
-    tmm_modules[TMM_JSONSSHLOG].name = "JsonSshLog";
-    tmm_modules[TMM_JSONSSHLOG].ThreadInit = JsonSshLogThreadInit;
-    tmm_modules[TMM_JSONSSHLOG].ThreadDeinit = JsonSshLogThreadDeinit;
-    tmm_modules[TMM_JSONSSHLOG].RegisterTests = NULL;
-    tmm_modules[TMM_JSONSSHLOG].cap_flags = 0;
-    tmm_modules[TMM_JSONSSHLOG].flags = TM_FLAG_LOGAPI_TM;
-
     /* register as separate module */
-    OutputRegisterPacketModule("JsonSshLog", "ssh-json-log", OutputSshLogInit,
-            JsonSshLogger, JsonSshCondition);
+    OutputRegisterPacketModule(LOGGER_JSON_SSH, "JsonSshLog", "ssh-json-log",
+        OutputSshLogInit, JsonSshLogger, JsonSshCondition, JsonSshLogThreadInit,
+        JsonSshLogThreadDeinit, NULL);
 
     /* also register as child of eve-log */
-    OutputRegisterPacketSubModule("eve-log", "JsonSshLog", "eve-log.ssh", OutputSshLogInitSub,
-            JsonSshLogger, JsonSshCondition);
+    OutputRegisterPacketSubModule(LOGGER_JSON_SSH, "eve-log", "JsonSshLog",
+        "eve-log.ssh", OutputSshLogInitSub, JsonSshLogger, JsonSshCondition,
+        JsonSshLogThreadInit, JsonSshLogThreadDeinit, NULL);
 }
 
 #else
 
-static TmEcode OutputJsonThreadInit(ThreadVars *t, void *initdata, void **data)
+void JsonSshLogRegister (void)
 {
-    SCLogInfo("Can't init JSON output - JSON support was disabled during build.");
-    return TM_ECODE_FAILED;
-}
-
-void TmModuleJsonSshLogRegister (void)
-{
-    tmm_modules[TMM_JSONSSHLOG].name = "JsonSshLog";
-    tmm_modules[TMM_JSONSSHLOG].ThreadInit = OutputJsonThreadInit;
+    SCLogInfo("Can't register JSON output - JSON support was disabled during build.");
 }
 
 #endif

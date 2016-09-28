@@ -89,6 +89,10 @@
 #include <string.h>
 #endif
 
+#if HAVE_STRINGS_H
+#include <strings.h>
+#endif
+
 #if HAVE_FCNTL_H
 #include <fcntl.h>
 #endif
@@ -241,7 +245,7 @@
 #define SigIntId uint32_t
 
 /** same for pattern id's */
-#define PatIntId uint16_t
+#define PatIntId uint32_t
 
 /** FreeBSD does not define __WORDSIZE, but it uses __LONG_BIT */
 #ifndef __WORDSIZE
@@ -297,6 +301,14 @@
 #define MIN(x, y) (((x)<(y))?(x):(y))
 #endif
 
+#ifndef MAX
+#define MAX(x, y) (((x)<(y))?(y):(x))
+#endif
+
+#define BIT_U16(n) ((uint16_t)(1 << (n)))
+#define BIT_U32(n) (1UL  << (n))
+#define BIT_U64(n) (1ULL << (n))
+
 typedef enum PacketProfileDetectId_ {
     PROF_DETECT_MPM,
     PROF_DETECT_MPM_PACKET,         /* PKT MPM */
@@ -316,6 +328,9 @@ typedef enum PacketProfileDetectId_ {
     PROF_DETECT_MPM_HHHD,
     PROF_DETECT_MPM_HRHHD,
     PROF_DETECT_MPM_DNSQUERY,
+    PROF_DETECT_MPM_TLSSNI,
+    PROF_DETECT_MPM_TLSISSUER,
+    PROF_DETECT_MPM_TLSSUBJECT,
     PROF_DETECT_IPONLY,
     PROF_DETECT_RULES,
     PROF_DETECT_STATEFUL,
@@ -328,6 +343,38 @@ typedef enum PacketProfileDetectId_ {
 
     PROF_DETECT_SIZE,
 } PacketProfileDetectId;
+
+typedef enum {
+    LOGGER_UNDEFINED,
+    LOGGER_ALERT_DEBUG,
+    LOGGER_ALERT_FAST,
+    LOGGER_UNIFIED2,
+    LOGGER_ALERT_SYSLOG,
+    LOGGER_DROP,
+    LOGGER_JSON_ALERT,
+    LOGGER_JSON_DROP,
+    LOGGER_JSON_SSH,
+    LOGGER_DNS,
+    LOGGER_HTTP,
+    LOGGER_JSON_DNS,
+    LOGGER_JSON_HTTP,
+    LOGGER_JSON_SMTP,
+    LOGGER_JSON_TLS,
+    LOGGER_JSON_TEMPLATE,
+    LOGGER_TLS_STORE,
+    LOGGER_TLS,
+    LOGGER_FILE,
+    LOGGER_FILE_STORE,
+    LOGGER_JSON_FILE,
+    LOGGER_TCP_DATA,
+    LOGGER_JSON_FLOW,
+    LOGGER_JSON_NETFLOW,
+    LOGGER_STATS,
+    LOGGER_JSON_STATS,
+    LOGGER_PRELUDE,
+    LOGGER_PCAP,
+    LOGGER_SIZE,
+} LoggerId;
 
 #include <htp/htp.h>
 #include "threads.h"

@@ -1,5 +1,6 @@
-    AC_INIT(suricata, 3.0dev)
+    AC_INIT(suricata, 3.2dev)
     m4_ifndef([AM_SILENT_RULES], [m4_define([AM_SILENT_RULES],[])])AM_SILENT_RULES([yes])
+    m4_ifndef([AS_VERSION_COMPARE], [AC_DEFUN([AS_VERSION_COMPARE],[])])
     AC_CONFIG_HEADERS([config.h])
     AC_CONFIG_SRCDIR([src/suricata.c])
     AC_CONFIG_MACRO_DIR(m4)
@@ -9,32 +10,6 @@
     AC_PROG_CC_C99
     AC_PROG_LIBTOOL
     PKG_PROG_PKG_CONFIG(0.21) # 0.21 is the CentOS 5.11 version
-
-    AC_DEFUN([FAIL_MESSAGE],[
-            echo
-            echo
-            echo "**********************************************"
-            echo "  ERROR: unable to find" $1
-            echo "  checked in the following places"
-            for i in `echo $2`; do
-            echo "        $i"
-            done
-            echo "**********************************************"
-            echo
-            exit 1
-            ])
-
-    AC_DEFUN([LIBNET_FAIL_WARN],[
-            echo
-            echo "*************************************************************************"
-            echo "   Warning! libnet version 1.1.x could not be found in " $1
-            echo "   Reject keywords will not be supported."
-            echo "   If you require reject support, please install libnet 1.1.x. "
-            echo "   If libnet is not installed in a non-standard location please use the"
-            echo "   --with-libnet-includes and --with-libnet-libraries configure options"
-            echo "*************************************************************************"
-            echo
-            ])
 
     dnl Taken from https://llvm.org/svn/llvm-project/llvm/trunk/autoconf/configure.ac
     dnl check if we compile using clang or gcc. On some systems the gcc binary is
@@ -119,14 +94,14 @@
     if test "x$enable_python" = "xno" ; then
         echo
         echo "   Warning! python disabled, you will not be      "
-        echo "   able to install surictasc unix socket client   "
+        echo "   able to install suricatasc unix socket client   "
         echo
         enable_python="no"
     fi
     if test "$HAVE_PYTHON_CONFIG" = "no"; then
         echo
         echo "   Warning! python not found, you will not be     "
-        echo "   able to install surictasc unix socket client   "
+        echo "   able to install suricatasc unix socket client   "
         echo
         enable_python="no"
     fi
@@ -151,7 +126,7 @@
     AC_CHECK_HEADERS([arpa/inet.h assert.h ctype.h errno.h fcntl.h inttypes.h])
     AC_CHECK_HEADERS([getopt.h])
     AC_CHECK_HEADERS([limits.h netdb.h netinet/in.h poll.h sched.h signal.h])
-    AC_CHECK_HEADERS([stdarg.h stdint.h stdio.h stdlib.h string.h sys/ioctl.h])
+    AC_CHECK_HEADERS([stdarg.h stdint.h stdio.h stdlib.h string.h strings.h sys/ioctl.h])
     AC_CHECK_HEADERS([syslog.h sys/prctl.h sys/socket.h sys/stat.h sys/syscall.h])
     AC_CHECK_HEADERS([sys/time.h time.h unistd.h])
     AC_CHECK_HEADERS([sys/ioctl.h linux/if_ether.h linux/if_packet.h linux/filter.h])
@@ -252,11 +227,39 @@
             LUA_LIB_NAME="lua"
             WINDOWS_PATH="yes"
             ;;
+        *-*-solaris*)
+            AC_MSG_WARN([support for Solaris/Illumos/SunOS is experimental])
+            LDFLAGS="${LDFLAGS} -lsocket -lnsl"
+            ;;
         *)
             AC_MSG_WARN([unsupported OS this may or may not work])
             ;;
     esac
     AC_MSG_RESULT(ok)
+
+    # enable modifications for AFL fuzzing
+    AC_ARG_ENABLE(afl,
+           AS_HELP_STRING([--enable-afl], Enable AFL fuzzing logic[])], [enable_afl="$enableval"],[enable_afl=no])
+
+    AS_IF([test "x$enable_afl" = "xyes"], [
+        AC_DEFINE([AFLFUZZ_NO_RANDOM], [1], [Disable all use of random functions])
+        AC_DEFINE([AFLFUZZ_DISABLE_MGTTHREADS], [1], [Disable all management threads])
+        AC_DEFINE([AFLFUZZ_PCAP_RUNMODE], [1], [Enable special AFL 'single' runmode])
+        AC_DEFINE([AFLFUZZ_CONF_TEST], [1], [Enable special --afl-parse-rules commandline option])
+        AC_DEFINE([AFLFUZZ_APPLAYER], [1], [Enable --afl-$proto-request commandline option])
+        AC_DEFINE([AFLFUZZ_MIME], [1], [Enable --afl-mime commandline option])
+        AC_DEFINE([AFLFUZZ_DECODER], [1], [Enable --afl-decoder-$proto commandline option])
+        AC_DEFINE([AFLFUZZ_DER], [1], [Enable --afl-der commandline option])
+        AC_DEFINE([AFLFUZZ_RULES], [1], [Enable --afl-rules commandline option])
+
+        # test for AFL PERSISTANT_MODE support
+        CFLAGS_ORIG=$CFLAGS
+        CFLAGS="-Werror"
+        AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[]], [[while (__AFL_LOOP(1000))]])],
+                [AC_DEFINE([AFLFUZZ_PERSISTANT_MODE], [1], [Enable AFL PERSISTANT_MODE])],
+                [])
+        CFLAGS=$CFLAGS_ORIG
+    ])
 
   # disable TLS on user request
     AC_ARG_ENABLE(threading-tls,
@@ -339,6 +342,10 @@
     AC_ARG_ENABLE(gccmarch_native,
            AS_HELP_STRING([--enable-gccmarch-native], [Enable gcc march=native gcc 4.2 and later only]),,[enable_gccmarch_native=yes])
     AS_IF([test "x$enable_gccmarch_native" = "xyes"], [
+        case "$host" in
+            *powerpc*)
+                ;;
+            *)
             OFLAGS="$CFLAGS"
             CFLAGS="$CFLAGS -march=native"
             AC_MSG_CHECKING([checking if $CC supports -march=native])
@@ -354,6 +361,8 @@
                           enable_gccmarch_native=no
                         ]
                      )
+                ;;
+        esac
     ])
 
 # options
@@ -422,10 +431,6 @@
     AS_IF([test "x$enable_coccinelle" = "xyes"], [
         AC_PATH_PROG(HAVE_COCCINELLE_CONFIG, spatch, "no")
         if test "$HAVE_COCCINELLE_CONFIG" = "no"; then
-            echo "   Warning! spatch not found, you will not be "
-            echo "   able to run code checking with coccinelle  "
-            echo "   get it from http://coccinelle.lip6.fr      "
-            echo "   or install from your distribution          "
             enable_coccinelle=no
         fi
     ])
@@ -481,16 +486,18 @@
 
     # libpcre 8.35 (especially on debian) has a known issue that results in segfaults
     # see https://redmine.openinfosecfoundation.org/issues/1693
-    PKG_CHECK_MODULES(LIBPCREVERSION, [libpcre = 8.35],[libpcre_buggy_found="yes"],[libprce_buggy_found="no"])
-    if test "$libpcre_buggy_found" = "yes"; then
-        echo
-        echo "   Warning! vulnerable libpcre version 8.35 found"
-        echo "   This version has a known issue that could result in segfaults"
-        echo "   please upgrade to a newer version of pcre which you can get from"
-        echo "   www.pcre.org. For more information, see issue #1693"
-        echo
-        echo "   Continuing for now with JIT disabled..."
-        echo
+    if test "$with_libpcre_libraries" = "no"; then
+        PKG_CHECK_MODULES(LIBPCREVERSION, [libpcre = 8.35],[libpcre_buggy_found="yes"],[libprce_buggy_found="no"])
+        if test "$libpcre_buggy_found" = "yes"; then
+            echo
+            echo "   Warning! vulnerable libpcre version 8.35 found"
+            echo "   This version has a known issue that could result in segfaults"
+            echo "   please upgrade to a newer version of pcre which you can get from"
+            echo "   www.pcre.org. For more information, see issue #1693"
+            echo
+            echo "   Continuing for now with JIT disabled..."
+            echo
+        fi
     fi
 
     # To prevent duping the lib link we reset LIBS after this check. Setting action-if-found to NULL doesn't seem to work
@@ -582,6 +589,44 @@
     else
         AC_MSG_RESULT(no)
     fi
+
+  # libhs
+    enable_hyperscan="no"
+
+    # Try pkg-config first:
+    PKG_CHECK_MODULES([libhs], libhs,, [with_pkgconfig_libhs=no])
+    if test "$with_pkgconfig_libhs" != "no"; then
+        CPPFLAGS="${CPPFLAGS} ${libhs_CFLAGS}"
+        LIBS="${LIBS} ${libhs_LIBS}"
+    fi
+
+    AC_ARG_WITH(libhs_includes,
+            [  --with-libhs-includes=DIR  libhs include directory],
+            [with_libhs_includes="$withval"],[with_libhs_includes=no])
+    AC_ARG_WITH(libhs_libraries,
+            [  --with-libhs-libraries=DIR    libhs library directory],
+            [with_libhs_libraries="$withval"],[with_libhs_libraries="no"])
+
+    if test "$with_libhs_includes" != "no"; then
+        CPPFLAGS="${CPPFLAGS} -I${with_libhs_includes}"
+    fi
+    AC_CHECK_HEADER(hs.h,HYPERSCAN="yes",HYPERSCAN="no")
+    if test "$HYPERSCAN" = "yes"; then
+        if test "$with_libhs_libraries" != "no"; then
+            LDFLAGS="${LDFLAGS}  -L${with_libhs_libraries}"
+        fi
+
+        AC_CHECK_LIB(hs,hs_compile,,HYPERSCAN="no")
+        enable_hyperscan="yes"
+        if test "$HYPERSCAN" = "no"; then
+            echo
+            echo "   Hyperscan headers are present, but link test failed."
+            echo "   Check that you have a shared library and C++ linkage available."
+            echo
+            enable_hyperscan="no"
+        fi
+    fi
+    AS_IF([test "x$enable_hyperscan" = "xyes"], [AC_DEFINE([BUILD_HYPERSCAN], [1], [Intel Hyperscan support enabled])])
 
   # libyaml
     AC_ARG_WITH(libyaml_includes,
@@ -708,6 +753,7 @@
     fi
 
     AS_IF([test "x$enable_unixsocket" = "xyes"], [AC_DEFINE([BUILD_UNIX_SOCKET], [1], [Unix socket support enabled])])
+    e_enable_evelog=$enable_jansson
 
     AC_ARG_ENABLE(nflog,
             AS_HELP_STRING([--enable-nflog],[Enable libnetfilter_log support]),
@@ -715,6 +761,10 @@
                            [ enable_nflog="no"])
     AC_ARG_ENABLE(nfqueue,
            AS_HELP_STRING([--enable-nfqueue], [Enable NFQUEUE support for inline IDP]),[enable_nfqueue=yes],[enable_nfqueue=no])
+    if test "$enable_nfqueue" != "no"; then
+        PKG_CHECK_MODULES([libnetfilter_queue], [libnetfilter_queue], [enable_nfqueue=yes], [enable_nfqueue=no])
+        CPPFLAGS="${CPPFLAGS} ${libnetfilter_queue_CFLAGS}"
+    fi
 
     if test "x$enable_nflog" = "xyes" || test  "x$enable_nfqueue" = "xyes"; then
   # libnfnetlink
@@ -927,12 +977,13 @@
     fi
     done
 
+    enable_libnet="no"
     AC_MSG_CHECKING(for libnet.h version 1.1.x)
     if test "$LIBNET_INC_DIR" != ""; then
-        if eval "grep LIBNET_VERSION $LIBNET_INC_DIR/libnet.h | grep -v '1.[[12]]' >/dev/null"; then
+        LIBNET_VER=`grep LIBNET_VERSION $LIBNET_INC_DIR/libnet.h | grep '1.[[12]]' | sed 's/[[^"]]*"\([[^"]]*\).*/\1/'`
+
+        if test -z "$LIBNET_VER" ; then
             AC_MSG_RESULT(no)
-            LIBNET_DETECT_FAIL="yes"
-            LIBNET_FAIL_WARN($libnet_dir)
         else
             AC_MSG_RESULT(yes)
         fi
@@ -949,12 +1000,7 @@
                 AC_DEFINE([__BSD_SOURCE],[1],(bsd source))
                 AC_DEFINE([__FAVOR_BSD],[1],(favor bsd))
                 AC_DEFINE([HAVE_NET_ETHERNET_H],[1],(ethernet.h))
-            else
-            #if we displayed a warning already no reason to do it again.
-                if test "$LIBNET_DETECT_FAIL" = "no"; then
-                    LIBNET_DETECT_FAIL="yes"
-                    LIBNET_FAIL_WARN($libnet_dir)
-                fi
+                enable_libnet="yes"
             fi
 
             # see if we have the patched libnet 1.1
@@ -962,7 +1008,7 @@
             #
             # To prevent duping the lib link we reset LIBS after this check. Setting action-if-found to NULL doesn't seem to work
             # see: http://blog.flameeyes.eu/2008/04/29/i-consider-ac_check_lib-harmful
-            if test "$LIBNET_DETECT_FAIL" = "no"; then
+            if test "$enable_libnet" = "yes"; then
                 LLIBNET=""
                 TMPLIBS="${LIBS}"
                 AC_CHECK_LIB(net, libnet_build_icmpv6_unreach,, LLIBNET="no")
@@ -971,10 +1017,46 @@
                 fi
                 LIBS="${TMPLIBS}"
             fi
+
+            # See if we have libnet 1.1.6 or newer - these versions handle capabilities correctly
+            # Some patched 1.1.4 versions are also good, but it's not guaranteed for all distros.
+            #
+            # Details: https://bugzilla.redhat.com/show_bug.cgi?id=589770
+            AS_VERSION_COMPARE([LIBNET_VER], [1.1.6],
+                [],
+                [AC_DEFINE([HAVE_LIBNET_CAPABILITIES],[1], (libnet_have_capabilities_patch))],
+                [AC_DEFINE([HAVE_LIBNET_CAPABILITIES],[1], (libnet_have_capabilities_patch))])
+
+
+            # check if the argument to libnet_init is char* or const char*
+            AC_MSG_CHECKING([libnet_init dev type])
+            STORECFLAGS="${CFLAGS}"
+            if test `basename $CC` = "clang"; then
+                CFLAGS="${CFLAGS} -Werror=incompatible-pointer-types"
+            else
+                CFLAGS="${CFLAGS} -Werror"
+            fi
+            AC_COMPILE_IFELSE(
+                [AC_LANG_PROGRAM(
+                    [
+                    #include <stdio.h>
+                    #include <libnet.h>
+                    ],
+                    [[
+                    const char dev[32] = "";
+                    char ebuf[LIBNET_ERRBUF_SIZE];
+                    (void)libnet_init(LIBNET_LINK, dev, ebuf);
+                    ]])],
+                [libnet_init_const="yes"],
+                [libnet_init_const="no"])
+            AC_MSG_RESULT($libnet_init_const)
+            if test "x$libnet_init_const" = "xyes"; then
+                AC_DEFINE([HAVE_LIBNET_INIT_CONST], [1], [libnet_init takes const argument])
+            fi
+            CFLAGS="${STORECFLAGS}"
         fi
     else
-        LIBNET_DETECT_FAIL="yes"
-        LIBNET_FAIL_WARN($libnet_dir)
+        AC_MSG_RESULT(no)
     fi
 
   # libpcap
@@ -1088,8 +1170,6 @@
                 echo
                 exit 1
                 fi
-            else
-                LIBS="${LIBS} -lrt -lnuma"
             fi
         else
             if test "x$enable_pfring" = "xyes"; then
@@ -1116,6 +1196,15 @@
             AC_DEFINE([HAVE_PACKET_FANOUT],[1],[Recent packet fanout support is available]),
             [],
             [[#include <linux/if_packet.h>]])
+        AC_CHECK_DECL([TPACKET_V3],
+            AC_DEFINE([HAVE_TPACKET_V3],[1],[AF_PACKET tpcket_v3 support is available]),
+            [],
+            [[#include <sys/socket.h>
+              #include <linux/if_packet.h>]])
+        AC_CHECK_DECL([SOF_TIMESTAMPING_RAW_HARDWARE],
+            AC_DEFINE([HAVE_HW_TIMESTAMPING],[1],[Hardware timestamping support is available]),
+            [],
+            [[#include <linux/net_tstamp.h>]])
     ])
 
   # Netmap support
@@ -1170,12 +1259,12 @@
             echo
             exit 1
         fi
-        PKG_CHECK_MODULES(LIBHTPMINVERSION, [htp >= 0.5.5],[libhtp_minver_found="yes"],[libhtp_minver_found="no"])
+        PKG_CHECK_MODULES(LIBHTPMINVERSION, [htp >= 0.5.20],[libhtp_minver_found="yes"],[libhtp_minver_found="no"])
         if test "$libhtp_minver_found" = "no"; then
             PKG_CHECK_MODULES(LIBHTPDEVVERSION, [htp = 0.5.X],[libhtp_devver_found="yes"],[libhtp_devver_found="no"])
             if test "$libhtp_devver_found" = "no"; then
                 echo
-                echo "   ERROR! libhtp was found but it is neither >= 0.5.5, nor the dev 0.5.X"
+                echo "   ERROR! libhtp was found but it is neither >= 0.5.20, nor the dev 0.5.X"
                 echo
                 exit 1
             fi
@@ -1185,6 +1274,7 @@
         # check for htp_tx_get_response_headers_raw
         AC_CHECK_LIB([htp], [htp_tx_get_response_headers_raw],AC_DEFINE_UNQUOTED([HAVE_HTP_TX_GET_RESPONSE_HEADERS_RAW],[1],[Found htp_tx_get_response_headers_raw in libhtp]) ,,[-lhtp])
         AC_CHECK_LIB([htp], [htp_decode_query_inplace],AC_DEFINE_UNQUOTED([HAVE_HTP_DECODE_QUERY_INPLACE],[1],[Found htp_decode_query_inplace function in libhtp]) ,,[-lhtp])
+        AC_CHECK_LIB([htp], [htp_config_set_response_decompression_layer_limit],AC_DEFINE_UNQUOTED([HAVE_HTP_CONFIG_SET_RESPONSE_DECOMPRESSION_LAYER_LIMIT],[1],[Found htp_config_set_response_decompression_layer_limit function in libhtp]) ,,[-lhtp])
         AC_EGREP_HEADER(htp_config_set_path_decode_u_encoding, htp/htp.h, AC_DEFINE_UNQUOTED([HAVE_HTP_SET_PATH_DECODE_U_ENCODING],[1],[Found usable htp_config_set_path_decode_u_encoding function in libhtp]) )
     ])
 
@@ -1197,17 +1287,19 @@
             HTP_LDADD="../libhtp/htp/libhtp.la"
             AC_SUBST(HTP_LDADD)
             # make sure libhtp is added to the includes
-            CPPFLAGS="-I${srcdir}/../libhtp/ ${CPPFLAGS}"
+            CPPFLAGS="-I\${srcdir}/../libhtp/ ${CPPFLAGS}"
 
             AC_CHECK_HEADER(iconv.h,,[AC_ERROR(iconv.h not found ...)])
             AC_CHECK_LIB(iconv, libiconv_close)
             AC_DEFINE_UNQUOTED([HAVE_HTP_URI_NORMALIZE_HOOK],[1],[Assuming htp_config_register_request_uri_normalize function in bundled libhtp])
             AC_DEFINE_UNQUOTED([HAVE_HTP_TX_GET_RESPONSE_HEADERS_RAW],[1],[Assuming htp_tx_get_response_headers_raw function in bundled libhtp])
             AC_DEFINE_UNQUOTED([HAVE_HTP_DECODE_QUERY_INPLACE],[1],[Assuming htp_decode_query_inplace function in bundled libhtp])
+            # enable when libhtp has been updated
+            AC_DEFINE_UNQUOTED([HAVE_HTP_CONFIG_SET_RESPONSE_DECOMPRESSION_LAYER_LIMIT],[1],[Assuming htp_config_set_response_decompression_layer_limit function in bundled libhtp])
         else
             echo
             echo "  ERROR: Libhtp is not bundled. Get libhtp by doing:"
-            echo "     git clone https://github.com/ironbee/libhtp"
+            echo "     git clone https://github.com/OISF/libhtp"
             echo "  Then re-run Suricata's autogen.sh and configure script."
             echo "  Or, if libhtp is installed in a different location,"
             echo "  pass --enable-non-bundled-htp to Suricata's configure script."
@@ -1578,7 +1670,7 @@
                     echo "   ERROR!  liblua library not found, go get it"
                     echo "   from http://lua.org/index.html or your distribution:"
                     echo
-                    echo "   Ubuntu: apt-get install liblua-5.1-dev"
+                    echo "   Ubuntu: apt-get install liblua5.1-dev"
                     echo "   CentOS/Fedora: yum install lua-devel"
                     echo
                     echo "   If you installed software in a non-standard prefix"
@@ -1614,7 +1706,7 @@
                 echo "   ERROR!  liblua headers not found, go get them"
                 echo "   from http://lua.org/index.html or your distribution:"
                 echo
-                echo "   Ubuntu: apt-get install liblua-5.1-dev"
+                echo "   Ubuntu: apt-get install liblua5.1-dev"
                 echo "   CentOS/Fedora: yum install lua-devel"
                 echo
                 echo "   If you installed software in a non-standard prefix"
@@ -1859,6 +1951,7 @@ AC_SUBST(e_localstatedir)
 AC_DEFINE_UNQUOTED([CONFIG_DIR],["$e_sysconfdir"],[Our CONFIG_DIR])
 AC_SUBST(e_magic_file)
 AC_SUBST(e_magic_file_comment)
+AC_SUBST(e_enable_evelog)
 
 EXPAND_VARIABLE(prefix, CONFIGURE_PREFIX)
 EXPAND_VARIABLE(sysconfdir, CONFIGURE_SYSCONDIR)
@@ -1894,15 +1987,19 @@ SURICATA_BUILD_CONF="Suricata Configuration:
   Non-bundled htp:                         ${enable_non_bundled_htp}
   Old barnyard2 support:                   ${enable_old_barnyard2}
   CUDA enabled:                            ${enable_cuda}
+  Hyperscan support:                       ${enable_hyperscan}
+  Libnet support:                          ${enable_libnet}
 
   Suricatasc install:                      ${enable_python}
 
+  Profiling enabled:                       ${enable_profiling}
+  Profiling locks enabled:                 ${enable_profiling_locks}
+
+Development settings:
+  Coccinelle / spatch:                     ${enable_coccinelle}
   Unit tests enabled:                      ${enable_unittests}
   Debug output enabled:                    ${enable_debug}
   Debug validation enabled:                ${enable_debug_validation}
-  Profiling enabled:                       ${enable_profiling}
-  Profiling locks enabled:                 ${enable_profiling_locks}
-  Coccinelle / spatch:                     ${enable_coccinelle}
 
 Generic build parameters:
   Installation prefix:                     ${prefix}

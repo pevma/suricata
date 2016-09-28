@@ -6538,15 +6538,16 @@ int DcePayloadTest15(void)
     DetectEngineThreadCtxInit(&tv, (void *)de_ctx, (void *)&det_ctx);
 
     /* request 1 */
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOSERVER, request1, request1_len);
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOSERVER, request1, request1_len);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
         result = 0;
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     /* detection phase */
     SigMatchSignatures(&tv, de_ctx, det_ctx, p);
     if (!(PacketAlertCheck(p, 1))) {
@@ -6654,15 +6655,16 @@ int DcePayloadTest16(void)
     DetectEngineThreadCtxInit(&tv, (void *)de_ctx, (void *)&det_ctx);
 
     /* request 1 */
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOSERVER, request1, request1_len);
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOSERVER, request1, request1_len);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
         result = 0;
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     /* detection phase */
     SigMatchSignatures(&tv, de_ctx, det_ctx, p);
     if (!(PacketAlertCheck(p, 1))) {
@@ -6770,15 +6772,16 @@ int DcePayloadTest17(void)
     DetectEngineThreadCtxInit(&tv, (void *)de_ctx, (void *)&det_ctx);
 
     /* request 1 */
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOSERVER, request1, request1_len);
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOSERVER, request1, request1_len);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
         result = 0;
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     /* detection phase */
     SigMatchSignatures(&tv, de_ctx, det_ctx, p);
     if (!(PacketAlertCheck(p, 1))) {
@@ -6886,15 +6889,16 @@ int DcePayloadTest18(void)
     DetectEngineThreadCtxInit(&tv, (void *)de_ctx, (void *)&det_ctx);
 
     /* request 1 */
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOSERVER, request1, request1_len);
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOSERVER, request1, request1_len);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
         result = 0;
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     /* detection phase */
     SigMatchSignatures(&tv, de_ctx, det_ctx, p);
     if (!(PacketAlertCheck(p, 1))) {
@@ -7002,15 +7006,16 @@ int DcePayloadTest19(void)
     DetectEngineThreadCtxInit(&tv, (void *)de_ctx, (void *)&det_ctx);
 
     /* request 1 */
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOSERVER, request1, request1_len);
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOSERVER, request1, request1_len);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
         result = 0;
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     /* detection phase */
     SigMatchSignatures(&tv, de_ctx, det_ctx, p);
     if (!(PacketAlertCheck(p, 1))) {
@@ -7118,15 +7123,16 @@ int DcePayloadTest20(void)
     DetectEngineThreadCtxInit(&tv, (void *)de_ctx, (void *)&det_ctx);
 
     /* request 1 */
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOSERVER, request1, request1_len);
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOSERVER, request1, request1_len);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
         result = 0;
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     /* detection phase */
     SigMatchSignatures(&tv, de_ctx, det_ctx, p);
     if (!(PacketAlertCheck(p, 1))) {
@@ -7223,15 +7229,16 @@ int DcePayloadTest21(void)
     DetectEngineThreadCtxInit(&tv, (void *)de_ctx, (void *)&det_ctx);
 
     /* request 1 */
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOSERVER, request1, request1_len);
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOSERVER, request1, request1_len);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
         result = 0;
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     /* detection phase */
     SigMatchSignatures(&tv, de_ctx, det_ctx, p);
     if (!(PacketAlertCheck(p, 1))) {
@@ -7324,15 +7331,16 @@ int DcePayloadTest22(void)
     DetectEngineThreadCtxInit(&tv, (void *)de_ctx, (void *)&det_ctx);
 
     /* request 1 */
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOSERVER, request1, request1_len);
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOSERVER, request1, request1_len);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
         result = 0;
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     /* detection phase */
     SigMatchSignatures(&tv, de_ctx, det_ctx, p);
     if (!(PacketAlertCheck(p, 1))) {
@@ -7426,15 +7434,16 @@ int DcePayloadTest23(void)
     DetectEngineThreadCtxInit(&tv, (void *)de_ctx, (void *)&det_ctx);
 
     /* request 1 */
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOSERVER, request1, request1_len);
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOSERVER, request1, request1_len);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
         result = 0;
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     /* detection phase */
     SigMatchSignatures(&tv, de_ctx, det_ctx, p);
     if (!(PacketAlertCheck(p, 1))) {
@@ -9642,15 +9651,16 @@ int DcePayloadTest42(void)
     DetectEngineThreadCtxInit(&tv, (void *)de_ctx, (void *)&det_ctx);
 
     /* request 1 */
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOSERVER, request1, request1_len);
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOSERVER, request1, request1_len);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
         result = 0;
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     /* detection phase */
     SigMatchSignatures(&tv, de_ctx, det_ctx, p);
     if (!(PacketAlertCheck(p, 1))) {
@@ -9744,15 +9754,16 @@ int DcePayloadTest43(void)
     DetectEngineThreadCtxInit(&tv, (void *)de_ctx, (void *)&det_ctx);
 
     /* request 1 */
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_DCERPC, STREAM_TOSERVER, request1, request1_len);
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_DCERPC,
+                            STREAM_TOSERVER, request1, request1_len);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
         result = 0;
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
     /* detection phase */
     SigMatchSignatures(&tv, de_ctx, det_ctx, p);
     if ( !(PacketAlertCheck(p, 1))) {
@@ -10134,58 +10145,58 @@ void DcePayloadRegisterTests(void)
 {
 
 #ifdef UNITTESTS
-    UtRegisterTest("DcePayloadTest01", DcePayloadTest01, 1);
-    UtRegisterTest("DcePayloadTest02", DcePayloadTest02, 1);
-    UtRegisterTest("DcePayloadTest03", DcePayloadTest03, 1);
-    UtRegisterTest("DcePayloadTest04", DcePayloadTest04, 1);
-    UtRegisterTest("DcePayloadTest05", DcePayloadTest05, 1);
-    UtRegisterTest("DcePayloadTest06", DcePayloadTest06, 1);
-    UtRegisterTest("DcePayloadTest07", DcePayloadTest07, 1);
-    UtRegisterTest("DcePayloadTest08", DcePayloadTest08, 1);
-    UtRegisterTest("DcePayloadTest09", DcePayloadTest09, 1);
-    UtRegisterTest("DcePayloadTest10", DcePayloadTest10, 1);
-    UtRegisterTest("DcePayloadTest11", DcePayloadTest11, 1);
-    UtRegisterTest("DcePayloadTest12", DcePayloadTest12, 1);
+    UtRegisterTest("DcePayloadTest01", DcePayloadTest01);
+    UtRegisterTest("DcePayloadTest02", DcePayloadTest02);
+    UtRegisterTest("DcePayloadTest03", DcePayloadTest03);
+    UtRegisterTest("DcePayloadTest04", DcePayloadTest04);
+    UtRegisterTest("DcePayloadTest05", DcePayloadTest05);
+    UtRegisterTest("DcePayloadTest06", DcePayloadTest06);
+    UtRegisterTest("DcePayloadTest07", DcePayloadTest07);
+    UtRegisterTest("DcePayloadTest08", DcePayloadTest08);
+    UtRegisterTest("DcePayloadTest09", DcePayloadTest09);
+    UtRegisterTest("DcePayloadTest10", DcePayloadTest10);
+    UtRegisterTest("DcePayloadTest11", DcePayloadTest11);
+    UtRegisterTest("DcePayloadTest12", DcePayloadTest12);
     /* Disabled because of bug_753.  Would be enabled, once we rewrite
      * dce parser */
 #if 0
     UtRegisterTest("DcePayloadTest13", DcePayloadTest13, 1);
     UtRegisterTest("DcePayloadTest14", DcePayloadTest14, 1);
 #endif
-    UtRegisterTest("DcePayloadTest15", DcePayloadTest15, 1);
-    UtRegisterTest("DcePayloadTest16", DcePayloadTest16, 1);
-    UtRegisterTest("DcePayloadTest17", DcePayloadTest17, 1);
-    UtRegisterTest("DcePayloadTest18", DcePayloadTest18, 1);
-    UtRegisterTest("DcePayloadTest19", DcePayloadTest19, 1);
-    UtRegisterTest("DcePayloadTest20", DcePayloadTest20, 1);
-    UtRegisterTest("DcePayloadTest21", DcePayloadTest21, 1);
-    UtRegisterTest("DcePayloadTest22", DcePayloadTest22, 1);
-    UtRegisterTest("DcePayloadTest23", DcePayloadTest23, 1);
+    UtRegisterTest("DcePayloadTest15", DcePayloadTest15);
+    UtRegisterTest("DcePayloadTest16", DcePayloadTest16);
+    UtRegisterTest("DcePayloadTest17", DcePayloadTest17);
+    UtRegisterTest("DcePayloadTest18", DcePayloadTest18);
+    UtRegisterTest("DcePayloadTest19", DcePayloadTest19);
+    UtRegisterTest("DcePayloadTest20", DcePayloadTest20);
+    UtRegisterTest("DcePayloadTest21", DcePayloadTest21);
+    UtRegisterTest("DcePayloadTest22", DcePayloadTest22);
+    UtRegisterTest("DcePayloadTest23", DcePayloadTest23);
 
-    UtRegisterTest("DcePayloadParseTest25", DcePayloadParseTest25, 1);
-    UtRegisterTest("DcePayloadParseTest26", DcePayloadParseTest26, 1);
-    UtRegisterTest("DcePayloadParseTest27", DcePayloadParseTest27, 1);
-    UtRegisterTest("DcePayloadParseTest28", DcePayloadParseTest28, 1);
-    UtRegisterTest("DcePayloadParseTest29", DcePayloadParseTest29, 1);
-    UtRegisterTest("DcePayloadParseTest30", DcePayloadParseTest30, 1);
-    UtRegisterTest("DcePayloadParseTest31", DcePayloadParseTest31, 1);
-    UtRegisterTest("DcePayloadParseTest32", DcePayloadParseTest32, 1);
-    UtRegisterTest("DcePayloadParseTest33", DcePayloadParseTest33, 1);
-    UtRegisterTest("DcePayloadParseTest34", DcePayloadParseTest34, 1);
-    UtRegisterTest("DcePayloadParseTest35", DcePayloadParseTest35, 1);
-    UtRegisterTest("DcePayloadParseTest36", DcePayloadParseTest36, 1);
-    UtRegisterTest("DcePayloadParseTest37", DcePayloadParseTest37, 1);
-    UtRegisterTest("DcePayloadParseTest38", DcePayloadParseTest38, 1);
-    UtRegisterTest("DcePayloadParseTest39", DcePayloadParseTest39, 1);
-    UtRegisterTest("DcePayloadParseTest40", DcePayloadParseTest40, 1);
-    UtRegisterTest("DcePayloadParseTest41", DcePayloadParseTest41, 1);
+    UtRegisterTest("DcePayloadParseTest25", DcePayloadParseTest25);
+    UtRegisterTest("DcePayloadParseTest26", DcePayloadParseTest26);
+    UtRegisterTest("DcePayloadParseTest27", DcePayloadParseTest27);
+    UtRegisterTest("DcePayloadParseTest28", DcePayloadParseTest28);
+    UtRegisterTest("DcePayloadParseTest29", DcePayloadParseTest29);
+    UtRegisterTest("DcePayloadParseTest30", DcePayloadParseTest30);
+    UtRegisterTest("DcePayloadParseTest31", DcePayloadParseTest31);
+    UtRegisterTest("DcePayloadParseTest32", DcePayloadParseTest32);
+    UtRegisterTest("DcePayloadParseTest33", DcePayloadParseTest33);
+    UtRegisterTest("DcePayloadParseTest34", DcePayloadParseTest34);
+    UtRegisterTest("DcePayloadParseTest35", DcePayloadParseTest35);
+    UtRegisterTest("DcePayloadParseTest36", DcePayloadParseTest36);
+    UtRegisterTest("DcePayloadParseTest37", DcePayloadParseTest37);
+    UtRegisterTest("DcePayloadParseTest38", DcePayloadParseTest38);
+    UtRegisterTest("DcePayloadParseTest39", DcePayloadParseTest39);
+    UtRegisterTest("DcePayloadParseTest40", DcePayloadParseTest40);
+    UtRegisterTest("DcePayloadParseTest41", DcePayloadParseTest41);
 
-    UtRegisterTest("DcePayloadTest42", DcePayloadTest42, 1);
-    UtRegisterTest("DcePayloadTest43", DcePayloadTest43, 1);
+    UtRegisterTest("DcePayloadTest42", DcePayloadTest42);
+    UtRegisterTest("DcePayloadTest43", DcePayloadTest43);
 
-    UtRegisterTest("DcePayloadParseTest44", DcePayloadParseTest44, 1);
-    UtRegisterTest("DcePayloadParseTest45", DcePayloadParseTest45, 1);
-    UtRegisterTest("DcePayloadParseTest46", DcePayloadParseTest46, 1);
+    UtRegisterTest("DcePayloadParseTest44", DcePayloadParseTest44);
+    UtRegisterTest("DcePayloadParseTest45", DcePayloadParseTest45);
+    UtRegisterTest("DcePayloadParseTest46", DcePayloadParseTest46);
 #endif /* UNITTESTS */
 
     return;

@@ -261,6 +261,22 @@ static void LogFilestoreLogCloseMetaFile(const File *ff)
                     }
                     fprintf(fp, "\n");
                 }
+                if (ff->flags & FILE_SHA1) {
+                    fprintf(fp, "SHA1:              ");
+                    size_t x;
+                    for (x = 0; x < sizeof(ff->sha1); x++) {
+                        fprintf(fp, "%02x", ff->sha1[x]);
+                    }
+                    fprintf(fp, "\n");
+                }
+                if (ff->flags & FILE_SHA256) {
+                    fprintf(fp, "SHA256:            ");
+                    size_t x;
+                    for (x = 0; x < sizeof(ff->sha256); x++) {
+                        fprintf(fp, "%02x", ff->sha256[x]);
+                    }
+                    fprintf(fp, "\n");
+                }
 #endif
                 break;
             case FILE_STATE_TRUNCATED:
@@ -273,7 +289,7 @@ static void LogFilestoreLogCloseMetaFile(const File *ff)
                 fprintf(fp, "STATE:             UNKNOWN\n");
                 break;
         }
-        fprintf(fp, "SIZE:              %"PRIu64"\n", ff->size);
+        fprintf(fp, "SIZE:              %"PRIu64"\n", FileSize(ff));
 
         fclose(fp);
     } else {
@@ -281,7 +297,8 @@ static void LogFilestoreLogCloseMetaFile(const File *ff)
     }
 }
 
-static int LogFilestoreLogger(ThreadVars *tv, void *thread_data, const Packet *p, const File *ff, const FileData *ffd, uint8_t flags)
+static int LogFilestoreLogger(ThreadVars *tv, void *thread_data, const Packet *p,
+        const File *ff, const uint8_t *data, uint32_t data_len, uint8_t flags)
 {
     SCEnter();
     LogFilestoreLogThread *aft = (LogFilestoreLogThread *)thread_data;
@@ -302,7 +319,7 @@ static int LogFilestoreLogger(ThreadVars *tv, void *thread_data, const Packet *p
         return 0;
     }
 
-    SCLogDebug("ff %p, ffd %p", ff, ffd);
+    SCLogDebug("ff %p, data %p, data_len %u", ff, data, data_len);
 
     snprintf(filename, sizeof(filename), "%s/file.%u",
             g_logfile_base_dir, ff->file_id);
@@ -319,7 +336,7 @@ static int LogFilestoreLogger(ThreadVars *tv, void *thread_data, const Packet *p
             return -1;
         }
     /* we can get called with a NULL ffd when we need to close */
-    } else if (ffd != NULL) {
+    } else if (data != NULL) {
         file_fd = open(filename, O_APPEND | O_NOFOLLOW | O_WRONLY);
         if (file_fd == -1) {
             SCLogDebug("failed to open file %s: %s", filename, strerror(errno));
@@ -328,7 +345,7 @@ static int LogFilestoreLogger(ThreadVars *tv, void *thread_data, const Packet *p
     }
 
     if (file_fd != -1) {
-        ssize_t r = write(file_fd, (const void *)ffd->data, (size_t)ffd->len);
+        ssize_t r = write(file_fd, (const void *)data, (size_t)data_len);
         if (r == -1) {
             SCLogDebug("write failed: %s", strerror(errno));
         }
@@ -351,7 +368,7 @@ static TmEcode LogFilestoreLogThreadInit(ThreadVars *t, void *initdata, void **d
 
     if (initdata == NULL)
     {
-        SCLogDebug("Error getting context for LogFilestore. \"initdata\" argument NULL");
+        SCLogDebug("Error getting context for LogFileStore. \"initdata\" argument NULL");
         SCFree(aft);
         return TM_ECODE_FAILED;
     }
@@ -427,12 +444,6 @@ static void LogFilestoreLogDeInitCtx(OutputCtx *output_ctx)
  * */
 static OutputCtx *LogFilestoreLogInitCtx(ConfNode *conf)
 {
-    LogFileCtx *logfile_ctx = LogFileNewCtx();
-    if (logfile_ctx == NULL) {
-        SCLogDebug("Could not create new LogFilestoreCtx");
-        return NULL;
-    }
-
     OutputCtx *output_ctx = SCCalloc(1, sizeof(OutputCtx));
     if (unlikely(output_ctx == NULL))
         return NULL;
@@ -470,36 +481,20 @@ static OutputCtx *LogFilestoreLogInitCtx(ConfNode *conf)
         SCLogInfo("forcing magic lookup for stored files");
     }
 
-    const char *force_md5 = ConfNodeLookupChildValue(conf, "force-md5");
-    if (force_md5 != NULL && ConfValIsTrue(force_md5)) {
-#ifdef HAVE_NSS
-        FileForceMd5Enable();
-        SCLogInfo("forcing md5 calculation for stored files");
-#else
-        SCLogInfo("md5 calculation requires linking against libnss");
-#endif
-    }
+    FileForceHashParseCfg(conf);
     SCLogInfo("storing files in %s", g_logfile_base_dir);
 
     SCReturnPtr(output_ctx, "OutputCtx");
 }
 
-void TmModuleLogFilestoreRegister (void)
+void LogFilestoreRegister (void)
 {
-    tmm_modules[TMM_FILESTORE].name = MODULE_NAME;
-    tmm_modules[TMM_FILESTORE].ThreadInit = LogFilestoreLogThreadInit;
-    tmm_modules[TMM_FILESTORE].Func = NULL;
-    tmm_modules[TMM_FILESTORE].ThreadExitPrintStats = LogFilestoreLogExitPrintStats;
-    tmm_modules[TMM_FILESTORE].ThreadDeinit = LogFilestoreLogThreadDeinit;
-    tmm_modules[TMM_FILESTORE].RegisterTests = NULL;
-    tmm_modules[TMM_FILESTORE].cap_flags = 0;
-    tmm_modules[TMM_FILESTORE].flags = TM_FLAG_LOGAPI_TM;
-    tmm_modules[TMM_FILESTORE].priority = 10;
-
-    OutputRegisterFiledataModule(MODULE_NAME, "file", LogFilestoreLogInitCtx,
-            LogFilestoreLogger);
-    OutputRegisterFiledataModule(MODULE_NAME, "file-store", LogFilestoreLogInitCtx,
-            LogFilestoreLogger);
+    OutputRegisterFiledataModule(LOGGER_FILE_STORE, MODULE_NAME, "file",
+        LogFilestoreLogInitCtx, LogFilestoreLogger, LogFilestoreLogThreadInit,
+        LogFilestoreLogThreadDeinit, LogFilestoreLogExitPrintStats);
+    OutputRegisterFiledataModule(LOGGER_FILE_STORE, MODULE_NAME, "file-store",
+        LogFilestoreLogInitCtx, LogFilestoreLogger, LogFilestoreLogThreadInit,
+        LogFilestoreLogThreadDeinit, LogFilestoreLogExitPrintStats);
 
     SCLogDebug("registered");
 }

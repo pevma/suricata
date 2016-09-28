@@ -74,7 +74,6 @@ void DetectHttpMethodRegister(void)
     sigmatch_table[DETECT_AL_HTTP_METHOD].url = "https://redmine.openinfosecfoundation.org/projects/suricata/wiki/HTTP-keywords#http_method";
     sigmatch_table[DETECT_AL_HTTP_METHOD].Match = NULL;
     sigmatch_table[DETECT_AL_HTTP_METHOD].AppLayerMatch = NULL;
-    sigmatch_table[DETECT_AL_HTTP_METHOD].alproto = ALPROTO_HTTP;
     sigmatch_table[DETECT_AL_HTTP_METHOD].Setup = DetectHttpMethodSetup;
     sigmatch_table[DETECT_AL_HTTP_METHOD].Free  = DetectHttpMethodFree;
     sigmatch_table[DETECT_AL_HTTP_METHOD].RegisterTests = DetectHttpMethodRegisterTests;
@@ -116,6 +115,41 @@ void DetectHttpMethodFree(void *ptr)
     if (data->content != NULL)
         SCFree(data->content);
     SCFree(data);
+}
+
+/**
+ *  \retval 1 valid
+ *  \retval 0 invalid
+ */
+int DetectHttpMethodValidateRule(const Signature *s)
+{
+    if (s->alproto != ALPROTO_HTTP)
+        return 1;
+
+    if (s->sm_lists[DETECT_SM_LIST_HMDMATCH] != NULL) {
+        const SigMatch *sm = s->sm_lists[DETECT_SM_LIST_HMDMATCH];
+        for ( ; sm != NULL; sm = sm->next) {
+            if (sm->type != DETECT_CONTENT)
+                continue;
+            const DetectContentData *cd = (const DetectContentData *)sm->ctx;
+            if (cd->content && cd->content_len) {
+                if (cd->content[cd->content_len-1] == 0x20) {
+                    SCLogError(SC_ERR_INVALID_SIGNATURE, "http_method pattern with trailing space");
+                    return 0;
+                } else if (cd->content[0] == 0x20) {
+                    SCLogError(SC_ERR_INVALID_SIGNATURE, "http_method pattern with leading space");
+                    return 0;
+                } else if (cd->content[cd->content_len-1] == 0x09) {
+                    SCLogError(SC_ERR_INVALID_SIGNATURE, "http_method pattern with trailing tab");
+                    return 0;
+                } else if (cd->content[0] == 0x09) {
+                    SCLogError(SC_ERR_INVALID_SIGNATURE, "http_method pattern with leading tab");
+                    return 0;
+                }
+            }
+        }
+    }
+    return 1;
 }
 
 #ifdef UNITTESTS /* UNITTESTS */
@@ -462,14 +496,15 @@ static int DetectHttpMethodSigTest01(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&th_v, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_HTTP, STREAM_TOSERVER, httpbuf1, httplen1);
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_HTTP,
+                                STREAM_TOSERVER, httpbuf1, httplen1);
     if (r != 0) {
         SCLogDebug("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     http_state = f.alstate;
     if (http_state == NULL) {
@@ -565,14 +600,15 @@ static int DetectHttpMethodSigTest02(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&th_v, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_HTTP, STREAM_TOSERVER, httpbuf1, httplen1);
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_HTTP,
+                                STREAM_TOSERVER, httpbuf1, httplen1);
     if (r != 0) {
         SCLogDebug("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     http_state = f.alstate;
     if (http_state == NULL) {
@@ -649,7 +685,7 @@ static int DetectHttpMethodSigTest03(void)
     s = de_ctx->sig_list = SigInit(de_ctx,
                                    "alert tcp any any -> any any "
                                    "(msg:\"Testing http_method\"; "
-                                   "content:\" \"; "
+                                   "content:\"GET\"; "
                                    "http_method; sid:1;)");
     if (s == NULL) {
         SCLogDebug("Bad signature");
@@ -659,14 +695,15 @@ static int DetectHttpMethodSigTest03(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&th_v, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_HTTP, STREAM_TOSERVER, httpbuf1, httplen1);
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_HTTP,
+                                STREAM_TOSERVER, httpbuf1, httplen1);
     if (r != 0) {
         SCLogDebug("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     http_state = f.alstate;
     if (http_state == NULL) {
@@ -755,14 +792,15 @@ static int DetectHttpMethodSigTest04(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&th_v, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_HTTP, STREAM_TOSERVER, httpbuf1, httplen1);
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_HTTP,
+                                STREAM_TOSERVER, httpbuf1, httplen1);
     if (r != 0) {
         SCLogDebug("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     http_state = f.alstate;
     if (http_state == NULL) {
@@ -812,19 +850,20 @@ void DetectHttpMethodRegisterTests(void)
 {
 #ifdef UNITTESTS /* UNITTESTS */
     SCLogDebug("Registering tests for DetectHttpMethod...");
-    UtRegisterTest("DetectHttpMethodTest01", DetectHttpMethodTest01, 1);
-    UtRegisterTest("DetectHttpMethodTest02", DetectHttpMethodTest02, 1);
-    UtRegisterTest("DetectHttpMethodTest03", DetectHttpMethodTest03, 1);
-    UtRegisterTest("DetectHttpMethodTest04", DetectHttpMethodTest04, 1);
-    UtRegisterTest("DetectHttpMethodTest05", DetectHttpMethodTest05, 1);
-    UtRegisterTest("DetectHttpMethodTest12 -- nocase flag", DetectHttpMethodTest12, 1);
-    UtRegisterTest("DetectHttpMethodTest13", DetectHttpMethodTest13, 1);
-    UtRegisterTest("DetectHttpMethodTest14", DetectHttpMethodTest14, 1);
-    UtRegisterTest("DetectHttpMethodTest15", DetectHttpMethodTest15, 1);
-    UtRegisterTest("DetectHttpMethodSigTest01", DetectHttpMethodSigTest01, 1);
-    UtRegisterTest("DetectHttpMethodSigTest02", DetectHttpMethodSigTest02, 1);
-    UtRegisterTest("DetectHttpMethodSigTest03", DetectHttpMethodSigTest03, 1);
-    UtRegisterTest("DetectHttpMethodSigTest04", DetectHttpMethodSigTest04, 1);
+    UtRegisterTest("DetectHttpMethodTest01", DetectHttpMethodTest01);
+    UtRegisterTest("DetectHttpMethodTest02", DetectHttpMethodTest02);
+    UtRegisterTest("DetectHttpMethodTest03", DetectHttpMethodTest03);
+    UtRegisterTest("DetectHttpMethodTest04", DetectHttpMethodTest04);
+    UtRegisterTest("DetectHttpMethodTest05", DetectHttpMethodTest05);
+    UtRegisterTest("DetectHttpMethodTest12 -- nocase flag",
+                   DetectHttpMethodTest12);
+    UtRegisterTest("DetectHttpMethodTest13", DetectHttpMethodTest13);
+    UtRegisterTest("DetectHttpMethodTest14", DetectHttpMethodTest14);
+    UtRegisterTest("DetectHttpMethodTest15", DetectHttpMethodTest15);
+    UtRegisterTest("DetectHttpMethodSigTest01", DetectHttpMethodSigTest01);
+    UtRegisterTest("DetectHttpMethodSigTest02", DetectHttpMethodSigTest02);
+    UtRegisterTest("DetectHttpMethodSigTest03", DetectHttpMethodSigTest03);
+    UtRegisterTest("DetectHttpMethodSigTest04", DetectHttpMethodSigTest04);
 #endif /* UNITTESTS */
 }
 

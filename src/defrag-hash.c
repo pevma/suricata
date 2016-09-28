@@ -132,10 +132,11 @@ void DefragInitConfig(char quiet)
     SC_ATOMIC_INIT(defragtracker_prune_idx);
     DefragTrackerQueueInit(&defragtracker_spare_q);
 
+#ifndef AFLFUZZ_NO_RANDOM
     unsigned int seed = RandomTimePreseed();
     /* set defaults */
     defrag_config.hash_rand   = (int)(DEFRAG_DEFAULT_HASHSIZE * (rand_r(&seed) / RAND_MAX + 1.0));
-
+#endif
     defrag_config.hash_size   = DEFRAG_DEFAULT_HASHSIZE;
     defrag_config.memcap      = DEFRAG_DEFAULT_MEMCAP;
     defrag_config.prealloc    = DEFRAG_DEFAULT_PREALLOC;
@@ -203,7 +204,7 @@ void DefragInitConfig(char quiet)
     (void) SC_ATOMIC_ADD(defrag_memuse, (defrag_config.hash_size * sizeof(DefragTrackerHashRow)));
 
     if (quiet == FALSE) {
-        SCLogInfo("allocated %llu bytes of memory for the defrag hash... "
+        SCLogConfig("allocated %llu bytes of memory for the defrag hash... "
                   "%" PRIu32 " buckets of size %" PRIuMAX "",
                   SC_ATOMIC_GET(defrag_memuse), defrag_config.hash_size,
                   (uintmax_t)sizeof(DefragTrackerHashRow));
@@ -230,14 +231,14 @@ void DefragInitConfig(char quiet)
                 DefragTrackerEnqueue(&defragtracker_spare_q,h);
             }
             if (quiet == FALSE) {
-                SCLogInfo("preallocated %" PRIu32 " defrag trackers of size %" PRIuMAX "",
+                SCLogConfig("preallocated %" PRIu32 " defrag trackers of size %" PRIuMAX "",
                         defragtracker_spare_q.len, (uintmax_t)sizeof(DefragTracker));
             }
         }
     }
 
     if (quiet == FALSE) {
-        SCLogInfo("defrag memory usage: %llu bytes, maximum: %"PRIu64,
+        SCLogConfig("defrag memory usage: %llu bytes, maximum: %"PRIu64,
                 SC_ATOMIC_GET(defrag_memuse), defrag_config.memcap);
     }
 

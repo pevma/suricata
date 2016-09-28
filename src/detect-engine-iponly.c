@@ -423,7 +423,7 @@ void IPOnlyCIDRListFree(IPOnlyCIDRItem *tmphead)
     while (it != NULL) {
         i++;
         SCFree(it);
-        SCLogDebug("Item(%p) %"PRIu32" removed\n", it, i);
+        SCLogDebug("Item(%p) %"PRIu32" removed", it, i);
         it = next;
 
         if (next != NULL)
@@ -1561,25 +1561,17 @@ void IPOnlyAddSignature(DetectEngineCtx *de_ctx, DetectEngineIPOnlyCtx *io_ctx,
 
 static int IPOnlyTestSig01(void)
 {
-    int result = 0;
-    DetectEngineCtx de_ctx;
+    DetectEngineCtx *de_ctx = DetectEngineCtxInit();
+    FAIL_IF(de_ctx == NULL);
+    de_ctx->flags |= DE_QUIET;
 
-    memset(&de_ctx, 0, sizeof(DetectEngineCtx));
+    Signature *s = SigInit(de_ctx,"alert tcp any any -> any any (sid:400001; rev:1;)");
+    FAIL_IF(s == NULL);
 
-    de_ctx.flags |= DE_QUIET;
-
-    Signature *s = SigInit(&de_ctx,"alert tcp any any -> any any (msg:\"SigTest40-01 sig is IPOnly \"; sid:400001; rev:1;)");
-    if (s == NULL) {
-        goto end;
-    }
-    if(SignatureIsIPOnly(&de_ctx, s))
-        result = 1;
-    else
-        printf("expected a IPOnly signature: ");
-
+    FAIL_IF(SignatureIsIPOnly(de_ctx, s) == 0);
     SigFree(s);
-end:
-    return result;
+    DetectEngineCtxFree(de_ctx);
+    PASS;
 }
 
 /**
@@ -1589,27 +1581,17 @@ end:
 
 static int IPOnlyTestSig02 (void)
 {
-    int result = 0;
-    DetectEngineCtx de_ctx;
-    memset (&de_ctx, 0, sizeof(DetectEngineCtx));
+    DetectEngineCtx *de_ctx = DetectEngineCtxInit();
+    FAIL_IF(de_ctx == NULL);
+    de_ctx->flags |= DE_QUIET;
 
-    memset(&de_ctx, 0, sizeof(DetectEngineCtx));
+    Signature *s = SigInit(de_ctx,"alert tcp any any -> any 80 (sid:400001; rev:1;)");
+    FAIL_IF(s == NULL);
 
-    de_ctx.flags |= DE_QUIET;
-
-    Signature *s = SigInit(&de_ctx,"alert tcp any any -> any 80 (msg:\"SigTest40-02 sig is not IPOnly \"; sid:400001; rev:1;)");
-    if (s == NULL) {
-        goto end;
-    }
-    if ((SignatureIsIPOnly(&de_ctx, s)))
-        result = 1;
-    else
-        printf("got a non-IPOnly signature: ");
-
+    FAIL_IF(SignatureIsIPOnly(de_ctx, s) == 0);
     SigFree(s);
-
-end:
-    return result;
+    DetectEngineCtxFree(de_ctx);
+    PASS;
 }
 
 /**
@@ -2119,52 +2101,36 @@ int IPOnlyTestSig12(void)
 
 static int IPOnlyTestSig13(void)
 {
-    int result = 0;
-    DetectEngineCtx de_ctx;
+    DetectEngineCtx *de_ctx = DetectEngineCtxInit();
+    FAIL_IF(de_ctx == NULL);
+    de_ctx->flags |= DE_QUIET;
 
-    memset(&de_ctx, 0, sizeof(DetectEngineCtx));
-
-    de_ctx.flags |= DE_QUIET;
-
-    Signature *s = SigInit(&de_ctx,
+    Signature *s = SigInit(de_ctx,
                            "alert tcp any any -> any any (msg:\"Test flowbits ip only\"; "
                            "flowbits:set,myflow1; sid:1; rev:1;)");
-    if (s == NULL) {
-        goto end;
-    }
-    if (SignatureIsIPOnly(&de_ctx, s))
-        result = 1;
-    else
-        printf("expected a IPOnly signature: ");
+    FAIL_IF(s == NULL);
 
+    FAIL_IF(SignatureIsIPOnly(de_ctx, s) == 0);
     SigFree(s);
-end:
-    return result;
+    DetectEngineCtxFree(de_ctx);
+    PASS;
 }
 
 static int IPOnlyTestSig14(void)
 {
-    int result = 0;
-    DetectEngineCtx de_ctx;
+    DetectEngineCtx *de_ctx = DetectEngineCtxInit();
+    FAIL_IF(de_ctx == NULL);
+    de_ctx->flags |= DE_QUIET;
 
-    memset(&de_ctx, 0, sizeof(DetectEngineCtx));
-
-    de_ctx.flags |= DE_QUIET;
-
-    Signature *s = SigInit(&de_ctx,
+    Signature *s = SigInit(de_ctx,
                            "alert tcp any any -> any any (msg:\"Test flowbits ip only\"; "
                            "flowbits:set,myflow1; flowbits:isset,myflow2; sid:1; rev:1;)");
-    if (s == NULL) {
-        goto end;
-    }
-    if (SignatureIsIPOnly(&de_ctx, s))
-        printf("expected a IPOnly signature: ");
-    else
-        result = 1;
+    FAIL_IF(s == NULL);
 
+    FAIL_IF(SignatureIsIPOnly(de_ctx, s) == 1);
     SigFree(s);
-end:
-    return result;
+    DetectEngineCtxFree(de_ctx);
+    PASS;
 }
 
 int IPOnlyTestSig15(void)
@@ -2284,36 +2250,36 @@ int IPOnlyTestSig17(void)
 void IPOnlyRegisterTests(void)
 {
 #ifdef UNITTESTS
-    UtRegisterTest("IPOnlyTestSig01", IPOnlyTestSig01, 1);
-    UtRegisterTest("IPOnlyTestSig02", IPOnlyTestSig02, 1);
-    UtRegisterTest("IPOnlyTestSig03", IPOnlyTestSig03, 1);
-    UtRegisterTest("IPOnlyTestSig04", IPOnlyTestSig04, 1);
+    UtRegisterTest("IPOnlyTestSig01", IPOnlyTestSig01);
+    UtRegisterTest("IPOnlyTestSig02", IPOnlyTestSig02);
+    UtRegisterTest("IPOnlyTestSig03", IPOnlyTestSig03);
+    UtRegisterTest("IPOnlyTestSig04", IPOnlyTestSig04);
 
-    UtRegisterTest("IPOnlyTestSig05", IPOnlyTestSig05, 1);
-    UtRegisterTest("IPOnlyTestSig06", IPOnlyTestSig06, 1);
+    UtRegisterTest("IPOnlyTestSig05", IPOnlyTestSig05);
+    UtRegisterTest("IPOnlyTestSig06", IPOnlyTestSig06);
 /* \todo fix it.  We have disabled this unittest because 599 exposes 608,
  * which is why these unittests fail.  When we fix 608, we need to renable
  * these sigs */
 #if 0
     UtRegisterTest("IPOnlyTestSig07", IPOnlyTestSig07, 1);
 #endif
-    UtRegisterTest("IPOnlyTestSig08", IPOnlyTestSig08, 1);
+    UtRegisterTest("IPOnlyTestSig08", IPOnlyTestSig08);
 
-    UtRegisterTest("IPOnlyTestSig09", IPOnlyTestSig09, 1);
-    UtRegisterTest("IPOnlyTestSig10", IPOnlyTestSig10, 1);
+    UtRegisterTest("IPOnlyTestSig09", IPOnlyTestSig09);
+    UtRegisterTest("IPOnlyTestSig10", IPOnlyTestSig10);
 /* \todo fix it.  We have disabled this unittest because 599 exposes 608,
  * which is why these unittests fail.  When we fix 608, we need to renable
  * these sigs */
 #if 0
     UtRegisterTest("IPOnlyTestSig11", IPOnlyTestSig11, 1);
 #endif
-    UtRegisterTest("IPOnlyTestSig12", IPOnlyTestSig12, 1);
-    UtRegisterTest("IPOnlyTestSig13", IPOnlyTestSig13, 1);
-    UtRegisterTest("IPOnlyTestSig14", IPOnlyTestSig14, 1);
-    UtRegisterTest("IPOnlyTestSig15", IPOnlyTestSig15, 1);
-    UtRegisterTest("IPOnlyTestSig16", IPOnlyTestSig16, 1);
+    UtRegisterTest("IPOnlyTestSig12", IPOnlyTestSig12);
+    UtRegisterTest("IPOnlyTestSig13", IPOnlyTestSig13);
+    UtRegisterTest("IPOnlyTestSig14", IPOnlyTestSig14);
+    UtRegisterTest("IPOnlyTestSig15", IPOnlyTestSig15);
+    UtRegisterTest("IPOnlyTestSig16", IPOnlyTestSig16);
 
-    UtRegisterTest("IPOnlyTestSig17", IPOnlyTestSig17, 1);
+    UtRegisterTest("IPOnlyTestSig17", IPOnlyTestSig17);
 #endif
 
     return;

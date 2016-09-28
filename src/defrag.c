@@ -559,26 +559,27 @@ DefragInsertFrag(ThreadVars *tv, DecodeThreadVars *dtv, DefragTracker *tracker, 
     else if (tracker->af == AF_INET6) {
         more_frags = IPV6_EXTHDR_GET_FH_FLAG(p);
         frag_offset = IPV6_EXTHDR_GET_FH_OFFSET(p);
-        data_offset = (uint8_t *)p->ip6eh.ip6fh + sizeof(IPV6FragHdr) - GET_PKT_DATA(p);
-        data_len = IPV6_GET_PLEN(p) - (
-            ((uint8_t *)p->ip6eh.ip6fh + sizeof(IPV6FragHdr)) -
-                ((uint8_t *)p->ip6h + sizeof(IPV6Hdr)));
+        data_offset = p->ip6eh.fh_data_offset;
+        data_len = p->ip6eh.fh_data_len;
         frag_end = frag_offset + data_len;
         ip_hdr_offset = (uint8_t *)p->ip6h - GET_PKT_DATA(p);
-        frag_hdr_offset = (uint8_t *)p->ip6eh.ip6fh - GET_PKT_DATA(p);
+        frag_hdr_offset = p->ip6eh.fh_header_offset;
+
+        SCLogDebug("mf %s frag_offset %u data_offset %u, data_len %u, "
+                "frag_end %u, ip_hdr_offset %u, frag_hdr_offset %u",
+                more_frags ? "true" : "false", frag_offset, data_offset,
+                data_len, frag_end, ip_hdr_offset, frag_hdr_offset);
 
         /* handle unfragmentable exthdrs */
         if (ip_hdr_offset + IPV6_HEADER_LEN < frag_hdr_offset) {
-            SCLogDebug("we have exthdrs before fraghdr %u bytes (%u hdrs total)",
-                    (uint32_t)(frag_hdr_offset - (ip_hdr_offset + IPV6_HEADER_LEN)),
-                    p->ip6eh.ip6_exthdrs_cnt);
+            SCLogDebug("we have exthdrs before fraghdr %u bytes",
+                    (uint32_t)(frag_hdr_offset - (ip_hdr_offset + IPV6_HEADER_LEN)));
 
             /* get the offset of the 'next' field in exthdr before the FH,
              * relative to the buffer start */
-            int t_offset = (int)((p->ip6eh.ip6_exthdrs[p->ip6eh.ip6_exthdrs_cnt - 2].data - 2) - GET_PKT_DATA(p));
 
             /* store offset and FH 'next' value for updating frag buffer below */
-            ip6_nh_set_offset = (int)t_offset;
+            ip6_nh_set_offset = p->ip6eh.fh_prev_hdr_offset;
             ip6_nh_set_value = IPV6_EXTHDR_GET_FH_NH(p);
             SCLogDebug("offset %d, value %u", ip6_nh_set_offset, ip6_nh_set_value);
         }
@@ -704,11 +705,8 @@ DefragInsertFrag(ThreadVars *tv, DecodeThreadVars *dtv, DefragTracker *tracker, 
 
 insert:
     if (data_len - ltrim <= 0) {
-        if (af == AF_INET) {
-            ENGINE_SET_EVENT(p, IPV4_FRAG_TOO_LARGE);
-        } else {
-            ENGINE_SET_EVENT(p, IPV6_FRAG_TOO_LARGE);
-        }
+        /* Full packet has been trimmed due to the overlap policy. Overlap
+         * already set. */
         goto done;
     }
 
@@ -783,7 +781,11 @@ insert:
                 StatsIncr(tv, dtv->counter_defrag_ipv4_reassembled);
                 if (pq && DecodeIPV4(tv, dtv, r, (void *)r->ip4h,
                                IPV4_GET_IPLEN(r), pq) != TM_ECODE_OK) {
+
+                    UNSET_TUNNEL_PKT(r);
+                    r->root = NULL;
                     TmqhOutputPacketpool(tv, r);
+                    r = NULL;
                 } else {
                     PacketDefragPktSetupParent(p);
                 }
@@ -796,7 +798,11 @@ insert:
                 if (pq && DecodeIPV6(tv, dtv, r, (uint8_t *)r->ip6h,
                                IPV6_GET_PLEN(r) + IPV6_HEADER_LEN,
                                pq) != TM_ECODE_OK) {
+
+                    UNSET_TUNNEL_PKT(r);
+                    r->root = NULL;
                     TmqhOutputPacketpool(tv, r);
+                    r = NULL;
                 } else {
                     PacketDefragPktSetupParent(p);
                 }
@@ -978,6 +984,7 @@ void DefragDestroy(void)
     DefragHashShutdown();
     DefragContextDestroy(defrag_context);
     defrag_context = NULL;
+    DefragTreeDestroy();
 }
 
 #ifdef UNITTESTS
@@ -1061,6 +1068,10 @@ error:
     return NULL;
 }
 
+void DecodeIPV6FragHeader(Packet *p, uint8_t *pkt,
+                          uint16_t hdrextlen, uint16_t plen,
+                          uint16_t prev_hdrextlen);
+
 static Packet *
 IPV6BuildTestPacket(uint32_t id, uint16_t off, int mf, const char content,
     int content_len)
@@ -1100,7 +1111,8 @@ IPV6BuildTestPacket(uint32_t id, uint16_t off, int mf, const char content,
     fh->ip6fh_nxt = IPPROTO_ICMP;
     fh->ip6fh_ident = htonl(id);
     fh->ip6fh_offlg = htons((off << 3) | mf);
-    p->ip6eh.ip6fh = fh;
+
+    DecodeIPV6FragHeader(p, (uint8_t *)fh, 8, 8 + content_len, 0);
 
     pcontent = SCCalloc(1, content_len);
     if (unlikely(pcontent == NULL))
@@ -2535,50 +2547,41 @@ void
 DefragRegisterTests(void)
 {
 #ifdef UNITTESTS
-    UtRegisterTest("DefragInOrderSimpleTest",
-        DefragInOrderSimpleTest, 1);
-    UtRegisterTest("DefragReverseSimpleTest",
-        DefragReverseSimpleTest, 1);
-    UtRegisterTest("DefragSturgesNovakBsdTest",
-        DefragSturgesNovakBsdTest, 1);
-    UtRegisterTest("DefragSturgesNovakLinuxTest",
-        DefragSturgesNovakLinuxTest, 1);
+    UtRegisterTest("DefragInOrderSimpleTest", DefragInOrderSimpleTest);
+    UtRegisterTest("DefragReverseSimpleTest", DefragReverseSimpleTest);
+    UtRegisterTest("DefragSturgesNovakBsdTest", DefragSturgesNovakBsdTest);
+    UtRegisterTest("DefragSturgesNovakLinuxTest", DefragSturgesNovakLinuxTest);
     UtRegisterTest("DefragSturgesNovakWindowsTest",
-        DefragSturgesNovakWindowsTest, 1);
+                   DefragSturgesNovakWindowsTest);
     UtRegisterTest("DefragSturgesNovakSolarisTest",
-        DefragSturgesNovakSolarisTest, 1);
-    UtRegisterTest("DefragSturgesNovakFirstTest",
-        DefragSturgesNovakFirstTest, 1);
-    UtRegisterTest("DefragSturgesNovakLastTest",
-        DefragSturgesNovakLastTest, 1);
+                   DefragSturgesNovakSolarisTest);
+    UtRegisterTest("DefragSturgesNovakFirstTest", DefragSturgesNovakFirstTest);
+    UtRegisterTest("DefragSturgesNovakLastTest", DefragSturgesNovakLastTest);
 
-    UtRegisterTest("DefragIPv4NoDataTest", DefragIPv4NoDataTest, 1);
-    UtRegisterTest("DefragIPv4TooLargeTest", DefragIPv4TooLargeTest, 1);
+    UtRegisterTest("DefragIPv4NoDataTest", DefragIPv4NoDataTest);
+    UtRegisterTest("DefragIPv4TooLargeTest", DefragIPv4TooLargeTest);
 
-    UtRegisterTest("IPV6DefragInOrderSimpleTest",
-        IPV6DefragInOrderSimpleTest, 1);
-    UtRegisterTest("IPV6DefragReverseSimpleTest",
-        IPV6DefragReverseSimpleTest, 1);
+    UtRegisterTest("IPV6DefragInOrderSimpleTest", IPV6DefragInOrderSimpleTest);
+    UtRegisterTest("IPV6DefragReverseSimpleTest", IPV6DefragReverseSimpleTest);
     UtRegisterTest("IPV6DefragSturgesNovakBsdTest",
-        IPV6DefragSturgesNovakBsdTest, 1);
+                   IPV6DefragSturgesNovakBsdTest);
     UtRegisterTest("IPV6DefragSturgesNovakLinuxTest",
-        IPV6DefragSturgesNovakLinuxTest, 1);
+                   IPV6DefragSturgesNovakLinuxTest);
     UtRegisterTest("IPV6DefragSturgesNovakWindowsTest",
-        IPV6DefragSturgesNovakWindowsTest, 1);
+                   IPV6DefragSturgesNovakWindowsTest);
     UtRegisterTest("IPV6DefragSturgesNovakSolarisTest",
-        IPV6DefragSturgesNovakSolarisTest, 1);
+                   IPV6DefragSturgesNovakSolarisTest);
     UtRegisterTest("IPV6DefragSturgesNovakFirstTest",
-        IPV6DefragSturgesNovakFirstTest, 1);
+                   IPV6DefragSturgesNovakFirstTest);
     UtRegisterTest("IPV6DefragSturgesNovakLastTest",
-        IPV6DefragSturgesNovakLastTest, 1);
+                   IPV6DefragSturgesNovakLastTest);
 
-    UtRegisterTest("DefragVlanTest", DefragVlanTest, 1);
-    UtRegisterTest("DefragVlanQinQTest", DefragVlanQinQTest, 1);
-    UtRegisterTest("DefragTrackerReuseTest", DefragTrackerReuseTest, 1);
-    UtRegisterTest("DefragTimeoutTest",
-        DefragTimeoutTest, 1);
-    UtRegisterTest("DefragMfIpv4Test", DefragMfIpv4Test, 1);
-    UtRegisterTest("DefragMfIpv6Test", DefragMfIpv6Test, 1);
+    UtRegisterTest("DefragVlanTest", DefragVlanTest);
+    UtRegisterTest("DefragVlanQinQTest", DefragVlanQinQTest);
+    UtRegisterTest("DefragTrackerReuseTest", DefragTrackerReuseTest);
+    UtRegisterTest("DefragTimeoutTest", DefragTimeoutTest);
+    UtRegisterTest("DefragMfIpv4Test", DefragMfIpv4Test);
+    UtRegisterTest("DefragMfIpv6Test", DefragMfIpv6Test);
 #endif /* UNITTESTS */
 }
 

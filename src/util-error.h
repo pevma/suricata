@@ -305,6 +305,20 @@ typedef enum {
     SC_ERR_STATS_LOG_NEGATED, /** When totals and threads are both NO in yaml **/
     SC_ERR_JSON_STATS_LOG_NEGATED, /** When totals and threads are both NO in yaml **/
     SC_ERR_DEPRECATED_CONF, /**< Deprecated configuration parameter. */
+    SC_WARN_FASTER_CAPTURE_AVAILABLE,
+    SC_WARN_POOR_RULE,
+    SC_ERR_ALERT_PAYLOAD_BUFFER,
+    SC_ERR_STATS_LOG_GENERIC,
+    SC_ERR_TCPDATA_LOG_GENERIC,
+    SC_ERR_FLOW_LOG_GENERIC,
+    SC_ERR_NETFLOW_LOG_GENERIC,
+    SC_ERR_SMTP_LOG_GENERIC,
+    SC_ERR_SSH_LOG_GENERIC,
+    SC_ERR_NIC_OFFLOADING,
+    SC_ERR_NO_FILES_FOR_PROTOCOL,
+    SC_ERR_INVALID_HASH,
+    SC_ERR_NO_SHA1_SUPPORT,
+    SC_ERR_NO_SHA256_SUPPORT,
 } SCError;
 
 const char *SCErrorToString(SCError);

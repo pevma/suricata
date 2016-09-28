@@ -43,6 +43,7 @@
 #include "detect-engine-apt-event.h"
 #include "detect-lua.h"
 #include "detect-app-layer-event.h"
+#include "detect-http-method.h"
 
 #include "pkt-var.h"
 #include "host.h"
@@ -67,7 +68,6 @@
 #include "detect-parse.h"
 #include "detect-engine-iponly.h"
 #include "app-layer-detect-proto.h"
-#include "app-layer.h"
 
 extern int sc_set_caps;
 
@@ -75,9 +75,6 @@ static pcre *config_pcre = NULL;
 static pcre *option_pcre = NULL;
 static pcre_extra *config_pcre_extra = NULL;
 static pcre_extra *option_pcre_extra = NULL;
-
-static uint32_t dbg_srcportany_cnt = 0;
-static uint32_t dbg_dstportany_cnt = 0;
 
 /**
  * \brief We use this as data to the hash table DetectEngineCtx->dup_sig_hash_table.
@@ -138,6 +135,93 @@ typedef struct SignatureParser_ {
     char dp[DETECT_MAX_RULE_SIZE];
     char opts[DETECT_MAX_RULE_SIZE];
 } SignatureParser;
+
+const char *DetectListToHumanString(int list)
+{
+#define CASE_CODE_STRING(E, S)  case E: return S; break
+    switch (list) {
+        CASE_CODE_STRING(DETECT_SM_LIST_MATCH, "packet");
+        CASE_CODE_STRING(DETECT_SM_LIST_PMATCH, "payload");
+        CASE_CODE_STRING(DETECT_SM_LIST_UMATCH, "http_uri");
+        CASE_CODE_STRING(DETECT_SM_LIST_HRUDMATCH, "http_raw_uri");
+        CASE_CODE_STRING(DETECT_SM_LIST_HCBDMATCH, "http_client_body");
+        CASE_CODE_STRING(DETECT_SM_LIST_FILEDATA, "file_data");
+        CASE_CODE_STRING(DETECT_SM_LIST_HHDMATCH, "http_header");
+        CASE_CODE_STRING(DETECT_SM_LIST_HRHDMATCH, "http_raw_header");
+        CASE_CODE_STRING(DETECT_SM_LIST_HSMDMATCH, "http_stat_msg");
+        CASE_CODE_STRING(DETECT_SM_LIST_HSCDMATCH, "http_stat_code");
+        CASE_CODE_STRING(DETECT_SM_LIST_HHHDMATCH, "http_host");
+        CASE_CODE_STRING(DETECT_SM_LIST_HRHHDMATCH, "http_raw_host");
+        CASE_CODE_STRING(DETECT_SM_LIST_HMDMATCH, "http_method");
+        CASE_CODE_STRING(DETECT_SM_LIST_HCDMATCH, "http_cookie");
+        CASE_CODE_STRING(DETECT_SM_LIST_HUADMATCH, "http_user_agent");
+        CASE_CODE_STRING(DETECT_SM_LIST_HRLMATCH, "http_request_line");
+        CASE_CODE_STRING(DETECT_SM_LIST_APP_EVENT, "app-layer-event");
+        CASE_CODE_STRING(DETECT_SM_LIST_AMATCH, "app-layer");
+        CASE_CODE_STRING(DETECT_SM_LIST_DMATCH, "dcerpc");
+        CASE_CODE_STRING(DETECT_SM_LIST_TMATCH, "tag");
+        CASE_CODE_STRING(DETECT_SM_LIST_FILEMATCH, "file");
+        CASE_CODE_STRING(DETECT_SM_LIST_DNSREQUEST_MATCH, "dns_request");
+        CASE_CODE_STRING(DETECT_SM_LIST_DNSRESPONSE_MATCH, "dns_response");
+        CASE_CODE_STRING(DETECT_SM_LIST_DNSQUERYNAME_MATCH, "dns_query");
+        CASE_CODE_STRING(DETECT_SM_LIST_TLSSNI_MATCH, "tls_sni");
+        CASE_CODE_STRING(DETECT_SM_LIST_TLSISSUER_MATCH, "tls_cert_issuer");
+        CASE_CODE_STRING(DETECT_SM_LIST_TLSSUBJECT_MATCH, "tls_cert_subject");
+        CASE_CODE_STRING(DETECT_SM_LIST_TLSVALIDITY_MATCH, "tls_cert_validity");
+        CASE_CODE_STRING(DETECT_SM_LIST_MODBUS_MATCH, "modbus");
+        CASE_CODE_STRING(DETECT_SM_LIST_TEMPLATE_BUFFER_MATCH, "template");
+        CASE_CODE_STRING(DETECT_SM_LIST_POSTMATCH, "postmatch");
+        CASE_CODE_STRING(DETECT_SM_LIST_SUPPRESS, "suppress");
+        CASE_CODE_STRING(DETECT_SM_LIST_THRESHOLD, "threshold");
+        CASE_CODE_STRING(DETECT_SM_LIST_MAX, "max (internal)");
+        CASE_CODE_STRING(DETECT_SM_LIST_NOTSET, "not set (internal)");
+    }
+#undef CASE_CODE_STRING
+    return "unknown";
+}
+
+#define CASE_CODE(E)  case E: return #E
+const char *DetectListToString(int list)
+{
+    switch (list) {
+        CASE_CODE(DETECT_SM_LIST_MATCH);
+        CASE_CODE(DETECT_SM_LIST_PMATCH);
+        CASE_CODE(DETECT_SM_LIST_UMATCH);
+        CASE_CODE(DETECT_SM_LIST_HRUDMATCH);
+        CASE_CODE(DETECT_SM_LIST_HCBDMATCH);
+        CASE_CODE(DETECT_SM_LIST_FILEDATA);
+        CASE_CODE(DETECT_SM_LIST_HHDMATCH);
+        CASE_CODE(DETECT_SM_LIST_HRHDMATCH);
+        CASE_CODE(DETECT_SM_LIST_HSMDMATCH);
+        CASE_CODE(DETECT_SM_LIST_HSCDMATCH);
+        CASE_CODE(DETECT_SM_LIST_HHHDMATCH);
+        CASE_CODE(DETECT_SM_LIST_HRHHDMATCH);
+        CASE_CODE(DETECT_SM_LIST_HMDMATCH);
+        CASE_CODE(DETECT_SM_LIST_HCDMATCH);
+        CASE_CODE(DETECT_SM_LIST_HUADMATCH);
+        CASE_CODE(DETECT_SM_LIST_HRLMATCH);
+        CASE_CODE(DETECT_SM_LIST_APP_EVENT);
+        CASE_CODE(DETECT_SM_LIST_AMATCH);
+        CASE_CODE(DETECT_SM_LIST_DMATCH);
+        CASE_CODE(DETECT_SM_LIST_TMATCH);
+        CASE_CODE(DETECT_SM_LIST_FILEMATCH);
+        CASE_CODE(DETECT_SM_LIST_DNSREQUEST_MATCH);
+        CASE_CODE(DETECT_SM_LIST_DNSRESPONSE_MATCH);
+        CASE_CODE(DETECT_SM_LIST_DNSQUERYNAME_MATCH);
+        CASE_CODE(DETECT_SM_LIST_TLSSNI_MATCH);
+        CASE_CODE(DETECT_SM_LIST_TLSISSUER_MATCH);
+        CASE_CODE(DETECT_SM_LIST_TLSSUBJECT_MATCH);
+        CASE_CODE(DETECT_SM_LIST_TLSVALIDITY_MATCH);
+        CASE_CODE(DETECT_SM_LIST_MODBUS_MATCH);
+        CASE_CODE(DETECT_SM_LIST_TEMPLATE_BUFFER_MATCH);
+        CASE_CODE(DETECT_SM_LIST_POSTMATCH);
+        CASE_CODE(DETECT_SM_LIST_SUPPRESS);
+        CASE_CODE(DETECT_SM_LIST_THRESHOLD);
+        CASE_CODE(DETECT_SM_LIST_MAX);
+        CASE_CODE(DETECT_SM_LIST_NOTSET);
+    }
+    return "unknown";
+}
 
 int DetectEngineContentModifierBufferSetup(DetectEngineCtx *de_ctx, Signature *s, char *arg,
                                            uint8_t sm_type, uint8_t sm_list,
@@ -225,16 +309,6 @@ int DetectEngineContentModifierBufferSetup(DetectEngineCtx *de_ctx, Signature *s
     ret = 0;
  end:
     return ret;
-}
-
-uint32_t DbgGetSrcPortAnyCnt(void)
-{
-    return dbg_srcportany_cnt;
-}
-
-uint32_t DbgGetDstPortAnyCnt(void)
-{
-    return dbg_dstportany_cnt;
 }
 
 SigMatch *SigMatchAlloc(void)
@@ -419,12 +493,12 @@ void SigMatchTransferSigMatchAcrossLists(SigMatch *sm,
     return;
 }
 
-int SigMatchListSMBelongsTo(Signature *s, SigMatch *key_sm)
+int SigMatchListSMBelongsTo(const Signature *s, const SigMatch *key_sm)
 {
     int list = 0;
 
     for (list = 0; list < DETECT_SM_LIST_MAX; list++) {
-        SigMatch *sm = s->sm_lists[list];
+        const SigMatch *sm = s->sm_lists[list];
         while (sm != NULL) {
             if (sm == key_sm)
                 return list;
@@ -536,6 +610,26 @@ static int SigParseOptions(DetectEngineCtx *de_ctx, Signature *s, char *optstr, 
         }
     }
 
+    /* Validate double quoting, trimming trailing white space along the way. */
+    if (strlen(optvalue) > 0) {
+        size_t ovlen = strlen(optvalue);
+        if (ovlen && optvalue[0] == '"') {
+            for (; ovlen > 0; ovlen--) {
+                if (isblank(optvalue[ovlen - 1])) {
+                    optvalue[ovlen - 1] = '\0';
+                } else {
+                    break;
+                }
+            }
+            if (ovlen && optvalue[ovlen - 1] != '"') {
+                SCLogError(SC_ERR_INVALID_SIGNATURE,
+                    "bad option value formatting (possible missing semicolon) "
+                    "for keyword %s: \'%s\'", optname, optvalue);
+                goto error;
+            }
+        }
+    }
+
     /* setup may or may not add a new SigMatch to the list */
     if (st->Setup(de_ctx, s, strlen(optvalue) ? optvalue : NULL) < 0) {
         SCLogDebug("\"%s\" failed to setup", st->name);
@@ -556,7 +650,7 @@ error:
  *
  *  \retval 0 ok, -1 error
  */
-int SigParseAddress(const DetectEngineCtx *de_ctx,
+static int SigParseAddress(DetectEngineCtx *de_ctx,
         Signature *s, const char *addrstr, char flag)
 {
     SCLogDebug("Address Group \"%s\" to be parsed now", addrstr);
@@ -566,13 +660,15 @@ int SigParseAddress(const DetectEngineCtx *de_ctx,
         if (strcasecmp(addrstr, "any") == 0)
             s->flags |= SIG_FLAG_SRC_ANY;
 
-        if (DetectAddressParse(de_ctx, &s->src, (char *)addrstr) < 0)
+        s->src = DetectParseAddress(de_ctx, addrstr);
+        if (s->src == NULL)
             goto error;
     } else {
         if (strcasecmp(addrstr, "any") == 0)
             s->flags |= SIG_FLAG_DST_ANY;
 
-        if (DetectAddressParse(de_ctx, &s->dst, (char *)addrstr) < 0)
+        s->dst = DetectParseAddress(de_ctx, addrstr);
+        if (s->dst == NULL)
             goto error;
     }
 
@@ -671,7 +767,7 @@ static int SigParsePort(const DetectEngineCtx *de_ctx,
 static int SigParseActionRejectValidate(const char *action)
 {
 #ifdef HAVE_LIBNET11
-#ifdef HAVE_LIBCAP_NG
+#if defined HAVE_LIBCAP_NG && !defined HAVE_LIBNET_CAPABILITIES
     if (sc_set_caps == TRUE) {
         SCLogError(SC_ERR_LIBNET11_INCOMPATIBLE_WITH_LIBCAP_NG, "Libnet 1.1 is "
             "incompatible with POSIX based capabilities with privs dropping. "
@@ -740,7 +836,7 @@ int SigParseAction(Signature *s, const char *action)
  *  \internal
  *  \brief split a signature string into a few blocks for further parsing
  */
-static int SigParseBasics(const DetectEngineCtx *de_ctx,
+static int SigParseBasics(DetectEngineCtx *de_ctx,
         Signature *s, const char *sigstr, SignatureParser *parser, uint8_t addrs_direction)
 {
 #define MAX_SUBSTRINGS 30
@@ -950,9 +1046,6 @@ void SigFree(Signature *s)
     }
     SigMatchFreeArrays(s);
 
-    DetectAddressHeadCleanup(&s->src);
-    DetectAddressHeadCleanup(&s->dst);
-
     if (s->sp != NULL) {
         DetectPortCleanupList(s->sp);
     }
@@ -992,7 +1085,7 @@ static void SigBuildAddressMatchArray(Signature *s)
     /* source addresses */
     uint16_t cnt = 0;
     uint16_t idx = 0;
-    DetectAddress *da = s->src.ipv4_head;
+    DetectAddress *da = s->src->ipv4_head;
     for ( ; da != NULL; da = da->next) {
         cnt++;
     }
@@ -1002,7 +1095,7 @@ static void SigBuildAddressMatchArray(Signature *s)
             exit(EXIT_FAILURE);
         }
 
-        for (da = s->src.ipv4_head; da != NULL; da = da->next) {
+        for (da = s->src->ipv4_head; da != NULL; da = da->next) {
             s->addr_src_match4[idx].ip = ntohl(da->ip.addr_data32[0]);
             s->addr_src_match4[idx].ip2 = ntohl(da->ip2.addr_data32[0]);
             idx++;
@@ -1013,7 +1106,7 @@ static void SigBuildAddressMatchArray(Signature *s)
     /* destination addresses */
     cnt = 0;
     idx = 0;
-    da = s->dst.ipv4_head;
+    da = s->dst->ipv4_head;
     for ( ; da != NULL; da = da->next) {
         cnt++;
     }
@@ -1023,7 +1116,7 @@ static void SigBuildAddressMatchArray(Signature *s)
             exit(EXIT_FAILURE);
         }
 
-        for (da = s->dst.ipv4_head; da != NULL; da = da->next) {
+        for (da = s->dst->ipv4_head; da != NULL; da = da->next) {
             s->addr_dst_match4[idx].ip = ntohl(da->ip.addr_data32[0]);
             s->addr_dst_match4[idx].ip2 = ntohl(da->ip2.addr_data32[0]);
             idx++;
@@ -1034,7 +1127,7 @@ static void SigBuildAddressMatchArray(Signature *s)
     /* source addresses IPv6 */
     cnt = 0;
     idx = 0;
-    da = s->src.ipv6_head;
+    da = s->src->ipv6_head;
     for ( ; da != NULL; da = da->next) {
         cnt++;
     }
@@ -1044,7 +1137,7 @@ static void SigBuildAddressMatchArray(Signature *s)
             exit(EXIT_FAILURE);
         }
 
-        for (da = s->src.ipv6_head; da != NULL; da = da->next) {
+        for (da = s->src->ipv6_head; da != NULL; da = da->next) {
             s->addr_src_match6[idx].ip[0] = ntohl(da->ip.addr_data32[0]);
             s->addr_src_match6[idx].ip[1] = ntohl(da->ip.addr_data32[1]);
             s->addr_src_match6[idx].ip[2] = ntohl(da->ip.addr_data32[2]);
@@ -1061,7 +1154,7 @@ static void SigBuildAddressMatchArray(Signature *s)
     /* destination addresses IPv6 */
     cnt = 0;
     idx = 0;
-    da = s->dst.ipv6_head;
+    da = s->dst->ipv6_head;
     for ( ; da != NULL; da = da->next) {
         cnt++;
     }
@@ -1071,7 +1164,7 @@ static void SigBuildAddressMatchArray(Signature *s)
             exit(EXIT_FAILURE);
         }
 
-        for (da = s->dst.ipv6_head; da != NULL; da = da->next) {
+        for (da = s->dst->ipv6_head; da != NULL; da = da->next) {
             s->addr_dst_match6[idx].ip[0] = ntohl(da->ip.addr_data32[0]);
             s->addr_dst_match6[idx].ip[1] = ntohl(da->ip.addr_data32[1]);
             s->addr_dst_match6[idx].ip[2] = ntohl(da->ip.addr_data32[2]);
@@ -1206,6 +1299,9 @@ int SigValidate(DetectEngineCtx *de_ctx, Signature *s)
         }
     }
 
+    if (!DetectHttpMethodValidateRule(s))
+        SCReturnInt(0);
+
     //if (s->alproto != ALPROTO_UNKNOWN) {
     //    if (s->flags & SIG_FLAG_STATE_MATCH) {
     //        if (s->alproto == ALPROTO_DNS) {
@@ -1322,7 +1418,7 @@ int SigValidate(DetectEngineCtx *de_ctx, Signature *s)
     if (s->sm_lists[DETECT_SM_LIST_BASE64_DATA] != NULL) {
         int list;
         uint16_t idx = s->sm_lists[DETECT_SM_LIST_BASE64_DATA]->idx;
-        for (list = 0; list < DETECT_SM_LIST_MAX; list++) {
+        for (list = 0; list < DETECT_SM_LIST_DETECT_MAX; list++) {
             if (list != DETECT_SM_LIST_BASE64_DATA &&
                 s->sm_lists[list] != NULL) {
                 if (s->sm_lists[list]->idx > idx) {
@@ -1349,6 +1445,20 @@ int SigValidate(DetectEngineCtx *de_ctx, Signature *s)
         }
     }
 #endif
+
+    if ((s->flags & SIG_FLAG_FILESTORE) || s->file_flags != 0) {
+        if (s->alproto != ALPROTO_UNKNOWN &&
+                !AppLayerParserSupportsFiles(IPPROTO_TCP, s->alproto))
+        {
+            SCLogError(SC_ERR_NO_FILES_FOR_PROTOCOL, "protocol %s doesn't "
+                    "support file matching", AppProtoToString(s->alproto));
+            SCReturnInt(0);
+        }
+
+        if (s->alproto == ALPROTO_HTTP) {
+            AppLayerHtpNeedFileInspection();
+        }
+    }
 
     SCReturnInt(1);
 }
@@ -1471,6 +1581,16 @@ static Signature *SigInitHelper(DetectEngineCtx *de_ctx, char *sigstr,
     if (sig->sm_lists[DETECT_SM_LIST_DNSRESPONSE_MATCH]) {
         sig->flags |= SIG_FLAG_STATE_MATCH;
     }
+
+    /* TLS */
+    if (sig->sm_lists[DETECT_SM_LIST_TLSSNI_MATCH])
+        sig->flags |= SIG_FLAG_STATE_MATCH;
+    if (sig->sm_lists[DETECT_SM_LIST_TLSISSUER_MATCH])
+        sig->flags |= SIG_FLAG_STATE_MATCH;
+    if (sig->sm_lists[DETECT_SM_LIST_TLSSUBJECT_MATCH])
+        sig->flags |= SIG_FLAG_STATE_MATCH;
+    if (sig->sm_lists[DETECT_SM_LIST_TLSVALIDITY_MATCH])
+        sig->flags |= SIG_FLAG_STATE_MATCH;
 
     if (sig->sm_lists[DETECT_SM_LIST_MODBUS_MATCH])
         sig->flags |= SIG_FLAG_STATE_MATCH;
@@ -1749,6 +1869,8 @@ static inline int DetectEngineSignatureIsDuplicate(DetectEngineCtx *de_ctx,
      * and discard the other one */
     if (sw->s->rev <= sw_dup->s->rev) {
         ret = 1;
+        SCFree(sw);
+        sw = NULL;
         goto end;
     }
 
@@ -1870,6 +1992,114 @@ error:
         SigFree(sig);
     return NULL;
 }
+
+typedef struct DetectParseRegex_ {
+    pcre *regex;
+    pcre_extra *study;
+    struct DetectParseRegex_ *next;
+} DetectParseRegex;
+
+static DetectParseRegex *g_detect_parse_regex_list = NULL;
+
+void DetectParseFreeRegexes(void)
+{
+    DetectParseRegex *r = g_detect_parse_regex_list;
+    while (r) {
+        DetectParseRegex *next = r->next;
+
+        if (r->regex) {
+            pcre_free(r->regex);
+        }
+        if (r->study) {
+            pcre_free_study(r->study);
+        }
+        SCFree(r);
+        r = next;
+    }
+    g_detect_parse_regex_list = NULL;
+}
+
+/** \brief add regex and/or study to at exit free list
+ */
+void DetectParseRegexAddToFreeList(pcre *regex, pcre_extra *study)
+{
+    DetectParseRegex *r = SCCalloc(1, sizeof(*r));
+    if (r == NULL) {
+        FatalError(SC_ERR_MEM_ALLOC, "failed to alloc memory for pcre free list");
+    }
+    r->regex = regex;
+    r->study = study;
+    r->next = g_detect_parse_regex_list;
+    g_detect_parse_regex_list = r;
+}
+
+void DetectSetupParseRegexes(const char *parse_str,
+                             pcre **parse_regex,
+                             pcre_extra **parse_regex_study)
+{
+    const char *eb;
+    int eo;
+    int opts = 0;
+
+    *parse_regex = pcre_compile(parse_str, opts, &eb, &eo, NULL);
+    if (*parse_regex == NULL) {
+        FatalError(SC_ERR_PCRE_COMPILE, "pcre compile of \"%s\" failed at "
+                "offset %" PRId32 ": %s", parse_str, eo, eb);
+    }
+
+    *parse_regex_study = pcre_study(*parse_regex, 0, &eb);
+    if (eb != NULL) {
+        FatalError(SC_ERR_PCRE_STUDY, "pcre study failed: %s", eb);
+    }
+
+    DetectParseRegexAddToFreeList(*parse_regex, *parse_regex_study);
+    return;
+}
+
+#ifdef AFLFUZZ_RULES
+#include "util-reference-config.h"
+int RuleParseDataFromFile(char *filename)
+{
+    char buffer[65536];
+
+    SigTableSetup();
+    SigParsePrepare();
+    SCReferenceConfInit();
+    SCClassConfInit();
+
+    DetectEngineCtx *de_ctx = DetectEngineCtxInit();
+    if (de_ctx == NULL)
+        return 0;
+
+#ifdef AFLFUZZ_PERSISTANT_MODE
+    while (__AFL_LOOP(10000)) {
+        /* reset state */
+        memset(buffer, 0, sizeof(buffer));
+#endif /* AFLFUZZ_PERSISTANT_MODE */
+
+        FILE *fp = fopen(filename, "r");
+        BUG_ON(fp == NULL);
+
+        size_t result = fread(&buffer, 1, sizeof(buffer), fp);
+        if (result < sizeof(buffer)) {
+            buffer[result] = '\0';
+            Signature *s = SigInit(de_ctx, buffer);
+            if (s != NULL) {
+                SigFree(s);
+            }
+        }
+        fclose(fp);
+
+#ifdef AFLFUZZ_PERSISTANT_MODE
+    }
+#endif /* AFLFUZZ_PERSISTANT_MODE */
+
+    DetectEngineCtxFree(de_ctx);
+    SCClassConfDeinit();
+    SCReferenceConfDeinit();
+    return 0;
+}
+#endif /* AFLFUZZ_RULES */
 
 /*
  * TESTS
@@ -2985,7 +3215,6 @@ int SigTestBidirec04 (void)
        with source 192.168.1.1 80, all the sids should match */
 
     SigGroupBuild(de_ctx);
-    //PatternMatchPrepare(mpm_ctx, MPM_B2G);
     SigMatchSignatures(&th_v, de_ctx, det_ctx, p);
 
     /* only sid 2 should match with a packet going to 192.168.1.1 port 80 */
@@ -2998,7 +3227,6 @@ int SigTestBidirec04 (void)
         PACKET_RECYCLE(p);
     }
     FlowShutdown();
-    //PatternMatchDestroy(mpm_ctx);
     DetectEngineThreadCtxDeinit(&th_v, (void *)det_ctx);
 
 end:
@@ -3381,59 +3609,76 @@ end:
     return result;
 }
 
+static int SigParseTestUnblanacedQuotes01(void)
+{
+    DetectEngineCtx *de_ctx;
+    Signature *s;
+
+    de_ctx = DetectEngineCtxInit();
+    FAIL_IF_NULL(de_ctx);
+    de_ctx->flags |= DE_QUIET;
+
+    s = SigInit(de_ctx, "alert http any any -> any any (msg:\"SigParseTestUnblanacedQuotes01\"; pcre:\"/\\/[a-z]+\\.php\\?[a-z]+?=\\d{7}&[a-z]+?=\\d{7,8}$/U\" flowbits:set,et.exploitkitlanding; classtype:trojan-activity; sid:2017078; rev:5;)");
+    FAIL_IF_NOT_NULL(s);
+
+    PASS;
+}
+
 #endif /* UNITTESTS */
 
 void SigParseRegisterTests(void)
 {
 #ifdef UNITTESTS
-    UtRegisterTest("SigParseTest01", SigParseTest01, 1);
-    UtRegisterTest("SigParseTest02", SigParseTest02, 1);
-    UtRegisterTest("SigParseTest03", SigParseTest03, 1);
-    UtRegisterTest("SigParseTest04", SigParseTest04, 1);
-    UtRegisterTest("SigParseTest05", SigParseTest05, 1);
-    UtRegisterTest("SigParseTest06", SigParseTest06, 1);
-    UtRegisterTest("SigParseTest07", SigParseTest07, 1);
-    UtRegisterTest("SigParseTest08", SigParseTest08, 1);
-    UtRegisterTest("SigParseTest09", SigParseTest09, 1);
-    UtRegisterTest("SigParseTest10", SigParseTest10, 1);
-    UtRegisterTest("SigParseTest11", SigParseTest11, 1);
-    UtRegisterTest("SigParseTest12", SigParseTest12, 1);
-    UtRegisterTest("SigParseTest13", SigParseTest13, 1);
-    UtRegisterTest("SigParseTest14", SigParseTest14, 1);
-    UtRegisterTest("SigParseTest15", SigParseTest15, 1);
-    UtRegisterTest("SigParseTest16", SigParseTest16, 1);
-    UtRegisterTest("SigParseTest17", SigParseTest17, 1);
-    UtRegisterTest("SigParseTest18", SigParseTest18, 1);
-    UtRegisterTest("SigParseTest19", SigParseTest19, 1);
-    UtRegisterTest("SigParseTest20", SigParseTest20, 1);
-    UtRegisterTest("SigParseTest21 -- address with space", SigParseTest21, 1);
-    UtRegisterTest("SigParseTest22 -- address with space", SigParseTest22, 1);
+    UtRegisterTest("SigParseTest01", SigParseTest01);
+    UtRegisterTest("SigParseTest02", SigParseTest02);
+    UtRegisterTest("SigParseTest03", SigParseTest03);
+    UtRegisterTest("SigParseTest04", SigParseTest04);
+    UtRegisterTest("SigParseTest05", SigParseTest05);
+    UtRegisterTest("SigParseTest06", SigParseTest06);
+    UtRegisterTest("SigParseTest07", SigParseTest07);
+    UtRegisterTest("SigParseTest08", SigParseTest08);
+    UtRegisterTest("SigParseTest09", SigParseTest09);
+    UtRegisterTest("SigParseTest10", SigParseTest10);
+    UtRegisterTest("SigParseTest11", SigParseTest11);
+    UtRegisterTest("SigParseTest12", SigParseTest12);
+    UtRegisterTest("SigParseTest13", SigParseTest13);
+    UtRegisterTest("SigParseTest14", SigParseTest14);
+    UtRegisterTest("SigParseTest15", SigParseTest15);
+    UtRegisterTest("SigParseTest16", SigParseTest16);
+    UtRegisterTest("SigParseTest17", SigParseTest17);
+    UtRegisterTest("SigParseTest18", SigParseTest18);
+    UtRegisterTest("SigParseTest19", SigParseTest19);
+    UtRegisterTest("SigParseTest20", SigParseTest20);
+    UtRegisterTest("SigParseTest21 -- address with space", SigParseTest21);
+    UtRegisterTest("SigParseTest22 -- address with space", SigParseTest22);
 
-    UtRegisterTest("SigParseBidirecTest06", SigParseBidirecTest06, 1);
-    UtRegisterTest("SigParseBidirecTest07", SigParseBidirecTest07, 1);
-    UtRegisterTest("SigParseBidirecTest08", SigParseBidirecTest08, 1);
-    UtRegisterTest("SigParseBidirecTest09", SigParseBidirecTest09, 1);
-    UtRegisterTest("SigParseBidirecTest10", SigParseBidirecTest10, 1);
-    UtRegisterTest("SigParseBidirecTest11", SigParseBidirecTest11, 1);
-    UtRegisterTest("SigParseBidirecTest12", SigParseBidirecTest12, 1);
-    UtRegisterTest("SigParseBidirecTest13", SigParseBidirecTest13, 1);
-    UtRegisterTest("SigParseBidirecTest14", SigParseBidirecTest14, 1);
-    UtRegisterTest("SigTestBidirec01", SigTestBidirec01, 1);
-    UtRegisterTest("SigTestBidirec02", SigTestBidirec02, 1);
-    UtRegisterTest("SigTestBidirec03", SigTestBidirec03, 1);
-    UtRegisterTest("SigTestBidirec04", SigTestBidirec04, 1);
-    UtRegisterTest("SigParseTestNegation01", SigParseTestNegation01, 1);
-    UtRegisterTest("SigParseTestNegation02", SigParseTestNegation02, 1);
-    UtRegisterTest("SigParseTestNegation03", SigParseTestNegation03, 1);
-    UtRegisterTest("SigParseTestNegation04", SigParseTestNegation04, 1);
-    UtRegisterTest("SigParseTestNegation05", SigParseTestNegation05, 1);
-    UtRegisterTest("SigParseTestNegation06", SigParseTestNegation06, 1);
-    UtRegisterTest("SigParseTestNegation07", SigParseTestNegation07, 1);
-    UtRegisterTest("SigParseTestNegation08", SigParseTestNegation08, 1);
-    UtRegisterTest("SigParseTestMpm01", SigParseTestMpm01, 1);
-    UtRegisterTest("SigParseTestMpm02", SigParseTestMpm02, 1);
-    UtRegisterTest("SigParseTestAppLayerTLS01", SigParseTestAppLayerTLS01, 1);
-    UtRegisterTest("SigParseTestAppLayerTLS02", SigParseTestAppLayerTLS02, 1);
-    UtRegisterTest("SigParseTestAppLayerTLS03", SigParseTestAppLayerTLS03, 1);
+    UtRegisterTest("SigParseBidirecTest06", SigParseBidirecTest06);
+    UtRegisterTest("SigParseBidirecTest07", SigParseBidirecTest07);
+    UtRegisterTest("SigParseBidirecTest08", SigParseBidirecTest08);
+    UtRegisterTest("SigParseBidirecTest09", SigParseBidirecTest09);
+    UtRegisterTest("SigParseBidirecTest10", SigParseBidirecTest10);
+    UtRegisterTest("SigParseBidirecTest11", SigParseBidirecTest11);
+    UtRegisterTest("SigParseBidirecTest12", SigParseBidirecTest12);
+    UtRegisterTest("SigParseBidirecTest13", SigParseBidirecTest13);
+    UtRegisterTest("SigParseBidirecTest14", SigParseBidirecTest14);
+    UtRegisterTest("SigTestBidirec01", SigTestBidirec01);
+    UtRegisterTest("SigTestBidirec02", SigTestBidirec02);
+    UtRegisterTest("SigTestBidirec03", SigTestBidirec03);
+    UtRegisterTest("SigTestBidirec04", SigTestBidirec04);
+    UtRegisterTest("SigParseTestNegation01", SigParseTestNegation01);
+    UtRegisterTest("SigParseTestNegation02", SigParseTestNegation02);
+    UtRegisterTest("SigParseTestNegation03", SigParseTestNegation03);
+    UtRegisterTest("SigParseTestNegation04", SigParseTestNegation04);
+    UtRegisterTest("SigParseTestNegation05", SigParseTestNegation05);
+    UtRegisterTest("SigParseTestNegation06", SigParseTestNegation06);
+    UtRegisterTest("SigParseTestNegation07", SigParseTestNegation07);
+    UtRegisterTest("SigParseTestNegation08", SigParseTestNegation08);
+    UtRegisterTest("SigParseTestMpm01", SigParseTestMpm01);
+    UtRegisterTest("SigParseTestMpm02", SigParseTestMpm02);
+    UtRegisterTest("SigParseTestAppLayerTLS01", SigParseTestAppLayerTLS01);
+    UtRegisterTest("SigParseTestAppLayerTLS02", SigParseTestAppLayerTLS02);
+    UtRegisterTest("SigParseTestAppLayerTLS03", SigParseTestAppLayerTLS03);
+    UtRegisterTest("SigParseTestUnblanacedQuotes01",
+        SigParseTestUnblanacedQuotes01);
 #endif /* UNITTESTS */
 }

@@ -38,38 +38,101 @@
 #include "util-decode-der-get.h"
 
 static const uint8_t SEQ_IDX_ISSUER[] = { 0, 2 };
+static const uint8_t SEQ_IDX_VALIDITY[] = { 0, 3 };
 static const uint8_t SEQ_IDX_SUBJECT[] = { 0, 4 };
 
 static const char *Oid2ShortStr(const char *oid)
 {
-    if (strcmp(oid, "1.2.840.113549.1.9.1")==0)
+    if (strcmp(oid, "1.2.840.113549.1.9.1") == 0)
         return "emailAddress";
 
-    if (strcmp(oid, "2.5.4.3")==0)
+    if (strcmp(oid, "2.5.4.3") == 0)
         return "CN";
 
-    if (strcmp(oid, "2.5.4.5")==0)
+    if (strcmp(oid, "2.5.4.5") == 0)
         return "serialNumber";
 
-    if (strcmp(oid, "2.5.4.6")==0)
+    if (strcmp(oid, "2.5.4.6") == 0)
         return "C";
 
-    if (strcmp(oid, "2.5.4.7")==0)
+    if (strcmp(oid, "2.5.4.7") == 0)
         return "L";
 
-    if (strcmp(oid, "2.5.4.8")==0)
+    if (strcmp(oid, "2.5.4.8") == 0)
         return "ST";
 
-    if (strcmp(oid, "2.5.4.10")==0)
+    if (strcmp(oid, "2.5.4.10") == 0)
         return "O";
 
-    if (strcmp(oid, "2.5.4.11")==0)
+    if (strcmp(oid, "2.5.4.11") == 0)
         return "OU";
 
-    if (strcmp(oid, "0.9.2342.19200300.100.1.25")==0)
+    if (strcmp(oid, "0.9.2342.19200300.100.1.25") == 0)
         return "DC";
 
     return "unknown";
+}
+
+static time_t GentimeToTime(char *gentime)
+{
+    time_t time;
+    struct tm tm;
+
+    /* GeneralizedTime values MUST be expressed in Greenwich Mean Time
+     * (Zulu) and MUST include seconds (rfc5280 4.1.2.5.2). It MUST NOT
+     * include fractional seconds. It should therefore be on the format
+     * YYYYmmddHHMMSSZ. */
+    if (strlen(gentime) != 15)
+        goto error;
+
+    tm.tm_gmtoff = 0;
+    strptime(gentime, "%Y%m%d%H%M%SZ", &tm);
+    time = SCMkTimeUtc(&tm);
+
+    if (time < 0)
+        goto error;
+
+    return time;
+
+error:
+    return -1;
+}
+
+static time_t UtctimeToTime(char *utctime)
+{
+    time_t time;
+    unsigned int year;
+    char yy[2];
+    char buf[20];
+
+    /* UTCTime values MUST be expressed in Greenwich Mean Time (Zulu)
+     * and MUST include seconds (rfc5280 4.1.2.5.1). It should
+     * therefore be on the format YYmmddHHMMSSZ. */
+    if (strlen(utctime) != 13)
+        goto error;
+
+    /* UTCTime use two digits to represent the year. The year field (YY)
+     * should be interpreted as 19YY when it is greater than or equal to
+     * 50. If it is less than 50 it should be interpreted as 20YY.
+     * Because of this, GeneralizedTime must be used for dates in the
+     * year 2050 or later. */
+    strlcpy(yy, utctime, sizeof(yy));
+    year = strtol(yy, NULL, 10);
+    if (year >= 50)
+        snprintf(buf, sizeof(buf), "%i%s", 19, utctime);
+    else if (year < 50)
+        snprintf(buf, sizeof(buf), "%i%s", 20, utctime);
+    else
+        goto error;
+
+    time = GentimeToTime(buf);
+    if (time == -1)
+        goto error;
+
+    return time;
+
+error:
+    return -1;
 }
 
 /**
@@ -78,7 +141,8 @@ static const char *Oid2ShortStr(const char *oid)
  *
  * \retval The matching node, or NULL
  */
-const Asn1Generic * Asn1DerGet(const Asn1Generic *top, const uint8_t *seq_index, const uint32_t seqsz, uint32_t *errcode)
+const Asn1Generic * Asn1DerGet(const Asn1Generic *top, const uint8_t *seq_index,
+                               const uint32_t seqsz, uint32_t *errcode)
 {
     const Asn1Generic * node;
     uint8_t idx, i;
@@ -128,10 +192,63 @@ const Asn1Generic * Asn1DerGet(const Asn1Generic *top, const uint8_t *seq_index,
     return node;
 }
 
-int Asn1DerGetIssuerDN(const Asn1Generic *cert, char *buffer, uint32_t length, uint32_t *errcode)
+int Asn1DerGetValidity(const Asn1Generic *cert, time_t *not_before,
+                       time_t *not_after, uint32_t *errcode)
+{
+    const Asn1Generic *node, *it;
+    int rc = -1;
+
+    if (errcode)
+        *errcode = ERR_DER_MISSING_ELEMENT;
+
+    node = Asn1DerGet(cert, SEQ_IDX_VALIDITY, sizeof(SEQ_IDX_VALIDITY), errcode);
+    if ((node == NULL) || node->type != ASN1_SEQUENCE)
+        goto validity_error;
+
+    it = node->data;
+    if (it == NULL || it->str == NULL)
+        goto validity_error;
+
+    if (it->type == ASN1_UTCTIME)
+        *not_before = UtctimeToTime(it->str);
+    else if (it->type == ASN1_GENERALIZEDTIME)
+        *not_before = GentimeToTime(it->str);
+    else
+        goto validity_error;
+
+    if (*not_before == -1)
+        goto validity_error;
+
+    if (node->next == NULL)
+        goto validity_error;
+
+    it = node->next->data;
+
+    if (it == NULL || it->str == NULL)
+        goto validity_error;
+
+    if (it->type == ASN1_UTCTIME)
+        *not_after = UtctimeToTime(it->str);
+    else if (it->type == ASN1_GENERALIZEDTIME)
+        *not_after = GentimeToTime(it->str);
+    else
+        goto validity_error;
+
+    if (*not_after == -1)
+        goto validity_error;
+
+    rc = 0;
+
+validity_error:
+    return rc;
+}
+
+int Asn1DerGetIssuerDN(const Asn1Generic *cert, char *buffer, uint32_t length,
+                       uint32_t *errcode)
 {
     const Asn1Generic *node_oid;
-    const Asn1Generic *node, *it;
+    const Asn1Generic *node;
+    const Asn1Generic *it;
     const Asn1Generic *node_set;
     const Asn1Generic *node_str;
     const char *shortname;
@@ -143,6 +260,7 @@ int Asn1DerGetIssuerDN(const Asn1Generic *cert, char *buffer, uint32_t length, u
 
     if (length < 10)
         goto issuer_dn_error;
+
     buffer[0] = '\0';
 
     node = Asn1DerGet(cert, SEQ_IDX_ISSUER, sizeof(SEQ_IDX_ISSUER), errcode);
@@ -186,7 +304,7 @@ int Asn1DerGetIssuerDN(const Asn1Generic *cert, char *buffer, uint32_t length, u
                 goto issuer_dn_error;
         }
 
-        if (strcmp(shortname,"CN")==0)
+        if (strcmp(shortname,"CN") == 0)
             separator = "/";
         if (it->next != NULL)
             strlcat(buffer, separator, length);
@@ -201,10 +319,12 @@ issuer_dn_error:
     return rc;
 }
 
-int Asn1DerGetSubjectDN(const Asn1Generic *cert, char *buffer, uint32_t length, uint32_t *errcode)
+int Asn1DerGetSubjectDN(const Asn1Generic *cert, char *buffer, uint32_t length,
+                        uint32_t *errcode)
 {
     const Asn1Generic *node_oid;
-    const Asn1Generic *node, *it;
+    const Asn1Generic *node;
+    const Asn1Generic *it;
     const Asn1Generic *node_set;
     const Asn1Generic *node_str;
     const char *shortname;
@@ -216,6 +336,7 @@ int Asn1DerGetSubjectDN(const Asn1Generic *cert, char *buffer, uint32_t length, 
 
     if (length < 10)
         goto subject_dn_error;
+
     buffer[0] = '\0';
 
     node = Asn1DerGet(cert, SEQ_IDX_SUBJECT, sizeof(SEQ_IDX_SUBJECT), errcode);
@@ -260,7 +381,7 @@ int Asn1DerGetSubjectDN(const Asn1Generic *cert, char *buffer, uint32_t length, 
                 goto subject_dn_error;
         }
 
-        if (strcmp(shortname,"CN")==0)
+        if (strcmp(shortname,"CN") == 0)
             separator = "/";
         if (it->next != NULL)
             strlcat(buffer, separator, length);
@@ -275,4 +396,3 @@ subject_dn_error:
     return rc;
 }
 
-/* vim: set et ts=4 sw=4: */

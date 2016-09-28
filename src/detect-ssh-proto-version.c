@@ -75,33 +75,11 @@ void DetectSshVersionRegister(void)
     sigmatch_table[DETECT_AL_SSH_PROTOVERSION].name = "ssh.protoversion";
     sigmatch_table[DETECT_AL_SSH_PROTOVERSION].Match = NULL;
     sigmatch_table[DETECT_AL_SSH_PROTOVERSION].AppLayerMatch = DetectSshVersionMatch;
-    sigmatch_table[DETECT_AL_SSH_PROTOVERSION].alproto = ALPROTO_SSH;
     sigmatch_table[DETECT_AL_SSH_PROTOVERSION].Setup = DetectSshVersionSetup;
     sigmatch_table[DETECT_AL_SSH_PROTOVERSION].Free  = DetectSshVersionFree;
     sigmatch_table[DETECT_AL_SSH_PROTOVERSION].RegisterTests = DetectSshVersionRegisterTests;
 
-    const char *eb;
-    int eo;
-    int opts = 0;
-
-	SCLogDebug("registering ssh.protoversion rule option");
-
-    parse_regex = pcre_compile(PARSE_REGEX, opts, &eb, &eo, NULL);
-    if (parse_regex == NULL) {
-        SCLogError(SC_ERR_PCRE_COMPILE, "Compile of \"%s\" failed at offset %" PRId32 ": %s",
-                    PARSE_REGEX, eo, eb);
-        goto error;
-    }
-
-    parse_regex_study = pcre_study(parse_regex, 0, &eb);
-    if (eb != NULL) {
-        SCLogError(SC_ERR_PCRE_STUDY, "pcre study failed: %s", eb);
-        goto error;
-    }
-    return;
-
-error:
-    return;
+    DetectSetupParseRegexes(PARSE_REGEX, &parse_regex, &parse_regex_study);
 }
 
 /**
@@ -396,35 +374,39 @@ static int DetectSshVersionTestDetect01(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&th_v, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_SSH, STREAM_TOSERVER, sshbuf1, sshlen1);
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_SSH,
+                                STREAM_TOSERVER, sshbuf1, sshlen1);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
 
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_SSH, STREAM_TOSERVER, sshbuf2, sshlen2);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_SSH, STREAM_TOSERVER,
+                            sshbuf2, sshlen2);
     if (r != 0) {
         printf("toserver chunk 2 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
 
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_SSH, STREAM_TOSERVER, sshbuf3, sshlen3);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_SSH, STREAM_TOSERVER,
+                            sshbuf3, sshlen3);
     if (r != 0) {
         printf("toserver chunk 3 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
 
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_SSH, STREAM_TOSERVER, sshbuf4, sshlen4);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_SSH, STREAM_TOSERVER,
+                            sshbuf4, sshlen4);
     if (r != 0) {
         printf("toserver chunk 4 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     SshState *ssh_state = f.alstate;
     if (ssh_state == NULL) {
@@ -509,34 +491,38 @@ static int DetectSshVersionTestDetect02(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&th_v, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_SSH, STREAM_TOSERVER, sshbuf1, sshlen1);
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_SSH,
+                                STREAM_TOSERVER, sshbuf1, sshlen1);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
         goto end;
     }
 
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_SSH, STREAM_TOSERVER, sshbuf2, sshlen2);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_SSH, STREAM_TOSERVER,
+                            sshbuf2, sshlen2);
     if (r != 0) {
         printf("toserver chunk 2 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
 
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_SSH, STREAM_TOSERVER, sshbuf3, sshlen3);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_SSH, STREAM_TOSERVER,
+                            sshbuf3, sshlen3);
     if (r != 0) {
         printf("toserver chunk 3 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
 
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_SSH, STREAM_TOSERVER, sshbuf4, sshlen4);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_SSH, STREAM_TOSERVER,
+                            sshbuf4, sshlen4);
     if (r != 0) {
         printf("toserver chunk 4 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     SshState *ssh_state = f.alstate;
     if (ssh_state == NULL) {
@@ -620,35 +606,39 @@ static int DetectSshVersionTestDetect03(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&th_v, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_SSH, STREAM_TOSERVER, sshbuf1, sshlen1);
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_SSH,
+                                STREAM_TOSERVER, sshbuf1, sshlen1);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
 
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_SSH, STREAM_TOSERVER, sshbuf2, sshlen2);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_SSH, STREAM_TOSERVER,
+                            sshbuf2, sshlen2);
     if (r != 0) {
         printf("toserver chunk 2 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
 
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_SSH, STREAM_TOSERVER, sshbuf3, sshlen3);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_SSH, STREAM_TOSERVER,
+                            sshbuf3, sshlen3);
     if (r != 0) {
         printf("toserver chunk 3 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
 
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_SSH, STREAM_TOSERVER, sshbuf4, sshlen4);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_SSH, STREAM_TOSERVER,
+                            sshbuf4, sshlen4);
     if (r != 0) {
         printf("toserver chunk 4 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     SshState *ssh_state = f.alstate;
     if (ssh_state == NULL) {
@@ -689,12 +679,15 @@ end:
 void DetectSshVersionRegisterTests(void)
 {
 #ifdef UNITTESTS /* UNITTESTS */
-    UtRegisterTest("DetectSshVersionTestParse01", DetectSshVersionTestParse01, 1);
-    UtRegisterTest("DetectSshVersionTestParse02", DetectSshVersionTestParse02, 1);
-    UtRegisterTest("DetectSshVersionTestParse03", DetectSshVersionTestParse03, 1);
-    UtRegisterTest("DetectSshVersionTestDetect01", DetectSshVersionTestDetect01, 1);
-    UtRegisterTest("DetectSshVersionTestDetect02", DetectSshVersionTestDetect02, 1);
-    UtRegisterTest("DetectSshVersionTestDetect03", DetectSshVersionTestDetect03, 1);
+    UtRegisterTest("DetectSshVersionTestParse01", DetectSshVersionTestParse01);
+    UtRegisterTest("DetectSshVersionTestParse02", DetectSshVersionTestParse02);
+    UtRegisterTest("DetectSshVersionTestParse03", DetectSshVersionTestParse03);
+    UtRegisterTest("DetectSshVersionTestDetect01",
+                   DetectSshVersionTestDetect01);
+    UtRegisterTest("DetectSshVersionTestDetect02",
+                   DetectSshVersionTestDetect02);
+    UtRegisterTest("DetectSshVersionTestDetect03",
+                   DetectSshVersionTestDetect03);
 #endif /* UNITTESTS */
 }
 

@@ -81,6 +81,7 @@ TmModuleReceiveErfFileRegister(void)
     tmm_modules[TMM_RECEIVEERFFILE].ThreadInit = ReceiveErfFileThreadInit;
     tmm_modules[TMM_RECEIVEERFFILE].Func = NULL;
     tmm_modules[TMM_RECEIVEERFFILE].PktAcqLoop = ReceiveErfFileLoop;
+    tmm_modules[TMM_RECEIVEERFFILE].PktAcqBreakLoop = NULL;
     tmm_modules[TMM_RECEIVEERFFILE].ThreadExitPrintStats =
         ReceiveErfFileThreadExitStats;
     tmm_modules[TMM_RECEIVEERFFILE].ThreadDeinit = NULL;
@@ -116,7 +117,7 @@ TmEcode ReceiveErfFileLoop(ThreadVars *tv, void *data, void *slot)
     etv->slot = ((TmSlot *)slot)->slot_next;
 
     while (1) {
-        if (suricata_ctl_flags & (SURICATA_STOP | SURICATA_KILL)) {
+        if (suricata_ctl_flags & SURICATA_STOP) {
             SCReturnInt(TM_ECODE_OK);
         }
 

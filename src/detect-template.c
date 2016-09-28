@@ -1,4 +1,4 @@
-/* Copyright (C) 2015 Open Information Security Foundation
+/* Copyright (C) 2015-2016 Open Information Security Foundation
  *
  * You can copy, redistribute or modify this Program under the terms of
  * the GNU General Public License version 2 as published by the Free
@@ -69,30 +69,7 @@ void DetectTemplateRegister(void) {
     sigmatch_table[DETECT_TEMPLATE].RegisterTests = DetectTemplateRegisterTests;
 
     /* set up the PCRE for keyword parsing */
-    const char *eb;
-    int eo;
-    int opts = 0;
-
-    parse_regex = pcre_compile(PARSE_REGEX, opts, &eb, &eo, NULL);
-    if (parse_regex == NULL) {
-        SCLogError(SC_ERR_PCRE_COMPILE, "pcre compile of \"%s\" failed at "
-                "offset %" PRId32 ": %s", PARSE_REGEX, eo, eb);
-        goto error;
-    }
-
-    parse_regex_study = pcre_study(parse_regex, 0, &eb);
-    if (eb != NULL) {
-        SCLogError(SC_ERR_PCRE_STUDY, "pcre study failed: %s", eb);
-        goto error;
-    }
-    return;
-
-error:
-    if (parse_regex != NULL)
-        SCFree(parse_regex);
-    if (parse_regex_study != NULL)
-        SCFree(parse_regex_study);
-    return;
+    DetectSetupParseRegexes(PARSE_REGEX, &parse_regex, &parse_regex_study);
 }
 
 /**
@@ -252,40 +229,25 @@ static void DetectTemplateFree(void *ptr) {
  * \test description of the test
  */
 
-static int DetectTemplateParseTest01 (void) {
-    DetectTemplateData *templated = NULL;
-    uint8_t res = 0;
-
-    templated = DetectTemplateParse("1,10");
-    if (templated != NULL) {
-        if (templated->arg1 == 1 && templated->arg2 == 10)
-            res = 1;
-
-        DetectTemplateFree(templated);
-    }
-
-    return res;
+static int DetectTemplateParseTest01 (void)
+{
+    DetectTemplateData *templated = DetectTemplateParse("1,10");
+    FAIL_IF_NULL(templated);
+    FAIL_IF(!(templated->arg1 == 1 && templated->arg2 == 10));
+    DetectTemplateFree(templated);
+    PASS;
 }
 
-static int DetectTemplateSignatureTest01 (void) {
-    uint8_t res = 0;
-
+static int DetectTemplateSignatureTest01 (void)
+{
     DetectEngineCtx *de_ctx = DetectEngineCtxInit();
-    if (de_ctx == NULL)
-        goto end;
+    FAIL_IF_NULL(de_ctx);
 
     Signature *sig = DetectEngineAppendSig(de_ctx, "alert ip any any -> any any (template:1,10; sid:1; rev:1;)");
-    if (sig == NULL) {
-        printf("parsing signature failed: ");
-        goto end;
-    }
+    FAIL_IF_NULL(sig);
 
-    /* if we get here, all conditions pass */
-    res = 1;
-end:
-    if (de_ctx != NULL)
-        DetectEngineCtxFree(de_ctx);
-    return res;
+    DetectEngineCtxFree(de_ctx);
+    PASS;
 }
 
 #endif /* UNITTESTS */
@@ -295,9 +257,8 @@ end:
  */
 void DetectTemplateRegisterTests(void) {
 #ifdef UNITTESTS
-    UtRegisterTest("DetectTemplateParseTest01",
-            DetectTemplateParseTest01, 1);
+    UtRegisterTest("DetectTemplateParseTest01", DetectTemplateParseTest01);
     UtRegisterTest("DetectTemplateSignatureTest01",
-            DetectTemplateSignatureTest01, 1);
+                   DetectTemplateSignatureTest01);
 #endif /* UNITTESTS */
 }

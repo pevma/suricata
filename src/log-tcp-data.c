@@ -60,19 +60,15 @@ static void LogTcpDataLogDeInitCtx(OutputCtx *);
 
 int LogTcpDataLogger(ThreadVars *tv, void *thread_data, const Flow *f, const uint8_t *data, uint32_t data_len, uint64_t tx_id, uint8_t flags);
 
-void TmModuleLogTcpDataLogRegister (void) {
-    tmm_modules[TMM_LOGTCPDATALOG].name = MODULE_NAME;
-    tmm_modules[TMM_LOGTCPDATALOG].ThreadInit = LogTcpDataLogThreadInit;
-    tmm_modules[TMM_LOGTCPDATALOG].ThreadExitPrintStats = LogTcpDataLogExitPrintStats;
-    tmm_modules[TMM_LOGTCPDATALOG].ThreadDeinit = LogTcpDataLogThreadDeinit;
-    tmm_modules[TMM_LOGTCPDATALOG].RegisterTests = NULL;
-    tmm_modules[TMM_LOGTCPDATALOG].cap_flags = 0;
-    tmm_modules[TMM_LOGTCPDATALOG].flags = TM_FLAG_LOGAPI_TM;
-
-    OutputRegisterStreamingModule(MODULE_NAME, "tcp-data", LogTcpDataLogInitCtx,
-            LogTcpDataLogger, STREAMING_TCP_DATA);
-    OutputRegisterStreamingModule(MODULE_NAME, "http-body-data", LogTcpDataLogInitCtx,
-            LogTcpDataLogger, STREAMING_HTTP_BODIES);
+void LogTcpDataLogRegister (void) {
+    OutputRegisterStreamingModule(LOGGER_TCP_DATA, MODULE_NAME, "tcp-data",
+        LogTcpDataLogInitCtx, LogTcpDataLogger, STREAMING_TCP_DATA,
+        LogTcpDataLogThreadInit, LogTcpDataLogThreadDeinit,
+        LogTcpDataLogExitPrintStats);
+    OutputRegisterStreamingModule(LOGGER_TCP_DATA, MODULE_NAME, "http-body-data",
+        LogTcpDataLogInitCtx, LogTcpDataLogger, STREAMING_HTTP_BODIES,
+        LogTcpDataLogThreadInit, LogTcpDataLogThreadDeinit,
+        LogTcpDataLogExitPrintStats);
 }
 
 typedef struct LogTcpDataFileCtx_ {
@@ -112,9 +108,10 @@ static int LogTcpDataLoggerDir(ThreadVars *tv, void *thread_data, const Flow *f,
 
         char name[PATH_MAX];
 
-        char tx[64] = "";
-        if (flags & OUTPUT_STREAMING_FLAG_TRANSACTION)
+        char tx[64] = { 0 };
+        if (flags & OUTPUT_STREAMING_FLAG_TRANSACTION) {
             snprintf(tx, sizeof(tx), "%"PRIu64, tx_id);
+        }
 
         snprintf(name, sizeof(name), "%s/%s/%s_%u-%s_%u-%s-%s.data",
                 td->log_dir,
@@ -248,7 +245,7 @@ OutputCtx *LogTcpDataLogInitCtx(ConfNode *conf)
 
     LogFileCtx *file_ctx = LogFileNewCtx();
     if(file_ctx == NULL) {
-        SCLogError(SC_ERR_HTTP_LOG_GENERIC, "couldn't create new file_ctx");
+        SCLogError(SC_ERR_TCPDATA_LOG_GENERIC, "couldn't create new file_ctx");
         return NULL;
     }
 

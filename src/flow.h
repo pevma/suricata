@@ -66,40 +66,48 @@ typedef struct AppLayerParserState_ AppLayerParserState;
 #define FLOW_ACTION_DROP                  0x00000200
 
 /** Sgh for toserver direction set (even if it's NULL) */
-#define FLOW_SGH_TOSERVER                 0x00000800
+#define FLOW_SGH_TOSERVER                 0x00000400
 /** Sgh for toclient direction set (even if it's NULL) */
-#define FLOW_SGH_TOCLIENT                 0x00001000
+#define FLOW_SGH_TOCLIENT                 0x00000800
 
 /** packet to server direction has been logged in drop file (only in IPS mode) */
-#define FLOW_TOSERVER_DROP_LOGGED         0x00002000
+#define FLOW_TOSERVER_DROP_LOGGED         0x00001000
 /** packet to client direction has been logged in drop file (only in IPS mode) */
-#define FLOW_TOCLIENT_DROP_LOGGED         0x00004000
+#define FLOW_TOCLIENT_DROP_LOGGED         0x00002000
 /** alproto detect done.  Right now we need it only for udp */
-#define FLOW_ALPROTO_DETECT_DONE          0x00008000
+#define FLOW_ALPROTO_DETECT_DONE          0x00004000
 
 // vacany 1x
 
 /** Pattern matcher alproto detection done */
-#define FLOW_TS_PM_ALPROTO_DETECT_DONE    0x00020000
+#define FLOW_TS_PM_ALPROTO_DETECT_DONE    0x00008000
 /** Probing parser alproto detection done */
-#define FLOW_TS_PP_ALPROTO_DETECT_DONE    0x00040000
+#define FLOW_TS_PP_ALPROTO_DETECT_DONE    0x00010000
 /** Pattern matcher alproto detection done */
-#define FLOW_TC_PM_ALPROTO_DETECT_DONE    0x00100000
+#define FLOW_TC_PM_ALPROTO_DETECT_DONE    0x00020000
 /** Probing parser alproto detection done */
-#define FLOW_TC_PP_ALPROTO_DETECT_DONE    0x00200000
-#define FLOW_TIMEOUT_REASSEMBLY_DONE      0x00800000
+#define FLOW_TC_PP_ALPROTO_DETECT_DONE    0x00040000
+#define FLOW_TIMEOUT_REASSEMBLY_DONE      0x00080000
 /** even if the flow has files, don't store 'm */
-#define FLOW_FILE_NO_STORE_TS             0x01000000
-#define FLOW_FILE_NO_STORE_TC             0x02000000
+#define FLOW_FILE_NO_STORE_TS             0x00100000
+#define FLOW_FILE_NO_STORE_TC             0x00200000
 
 /** flow is ipv4 */
-#define FLOW_IPV4                         0x04000000
+#define FLOW_IPV4                         0x00400000
 /** flow is ipv6 */
-#define FLOW_IPV6                         0x08000000
+#define FLOW_IPV6                         0x00800000
 
 /** no md5 on files in this flow */
-#define FLOW_FILE_NO_MD5_TS               0x10000000
-#define FLOW_FILE_NO_MD5_TC               0x20000000
+#define FLOW_FILE_NO_MD5_TS               0x01000000
+#define FLOW_FILE_NO_MD5_TC               0x02000000
+
+/** no sha1 on files in this flow */
+#define FLOW_FILE_NO_SHA1_TS              0x04000000
+#define FLOW_FILE_NO_SHA1_TC              0x08000000
+
+/** no sha256 on files in this flow */
+#define FLOW_FILE_NO_SHA256_TS            0x10000000
+#define FLOW_FILE_NO_SHA256_TC            0x20000000
 
 /** no size tracking of files in this flow */
 #define FLOW_FILE_NO_SIZE_TS              0x40000000
@@ -314,6 +322,14 @@ typedef struct Flow_
     uint8_t recursion_level;
     uint16_t vlan_id[2];
 
+    /** flow hash - the flow hash before hash table size mod. */
+    uint32_t flow_hash;
+
+    /* time stamp of last update (last packet). Set/updated under the
+     * flow and flow hash row locks, safe to read under either the
+     * flow lock or flow hash row lock. */
+    struct timeval lastts;
+
     /* end of flow "header" */
 
     SC_ATOMIC_DECLARE(FlowStateType, flow_state);
@@ -326,9 +342,6 @@ typedef struct Flow_
      */
     SC_ATOMIC_DECLARE(FlowRefCount, use_cnt);
 
-    /** flow queue id, used with autofp */
-    SC_ATOMIC_DECLARE(int16_t, autofp_tmqh_flow_qid);
-
     /** flow tenant id, used to setup flow timeout and stream pseudo
      *  packets with the correct tenant id set */
     uint32_t tenant_id;
@@ -337,11 +350,6 @@ typedef struct Flow_
     uint32_t probing_parser_toclient_alproto_masks;
 
     uint32_t flags;
-
-    /* time stamp of last update (last packet). Set/updated under the
-     * flow and flow hash row locks, safe to read under either the
-     * flow lock or flow hash row lock. */
-    struct timeval lastts;
 
 #ifdef FLOWLOCK_RWLOCK
     SCRWLock r;
@@ -413,28 +421,32 @@ typedef struct Flow_
     uint64_t tosrcbytecnt;
 } Flow;
 
-enum {
+enum FlowState {
     FLOW_STATE_NEW = 0,
     FLOW_STATE_ESTABLISHED,
     FLOW_STATE_CLOSED,
 };
 
-typedef struct FlowProto_ {
+typedef struct FlowProtoTimeout_ {
     uint32_t new_timeout;
     uint32_t est_timeout;
     uint32_t closed_timeout;
-    uint32_t emerg_new_timeout;
-    uint32_t emerg_est_timeout;
-    uint32_t emerg_closed_timeout;
-    void (*Freefunc)(void *);
-} FlowProto;
+} FlowProtoTimeout;
 
+typedef struct FlowProtoFreeFunc_ {
+    void (*Freefunc)(void *);
+} FlowProtoFreeFunc;
+
+/** \brief prepare packet for a life with flow
+ *  Set PKT_WANTS_FLOW flag to incidate workers should do a flow lookup
+ *  and calc the hash value to be used in the lookup and autofp flow
+ *  balancing. */
+void FlowSetupPacket(Packet *p);
 void FlowHandlePacket (ThreadVars *, DecodeThreadVars *, Packet *);
 void FlowInitConfig (char);
 void FlowPrintQueueInfo (void);
 void FlowShutdown(void);
-void FlowSetIPOnlyFlag(Flow *, char);
-void FlowSetIPOnlyFlagNoLock(Flow *, char);
+void FlowSetIPOnlyFlag(Flow *, int);
 
 void FlowRegisterTests (void);
 int FlowSetProtoTimeout(uint8_t ,uint32_t ,uint32_t ,uint32_t);
@@ -446,32 +458,16 @@ struct FlowQueue_;
 
 int FlowUpdateSpareFlows(void);
 
-static inline void FlowLockSetNoPacketInspectionFlag(Flow *);
 static inline void FlowSetNoPacketInspectionFlag(Flow *);
-static inline void FlowLockSetNoPayloadInspectionFlag(Flow *);
 static inline void FlowSetNoPayloadInspectionFlag(Flow *);
 
 int FlowGetPacketDirection(const Flow *, const Packet *);
 
 void FlowCleanupAppLayer(Flow *);
 
+void FlowUpdateState(Flow *f, enum FlowState s);
+
 /** ----- Inline functions ----- */
-
-/** \brief Set the No Packet Inspection Flag after locking the flow.
- *
- * \param f Flow to set the flag in
- */
-static inline void FlowLockSetNoPacketInspectionFlag(Flow *f)
-{
-    SCEnter();
-
-    SCLogDebug("flow %p", f);
-    FLOWLOCK_WRLOCK(f);
-    f->flags |= FLOW_NOPACKET_INSPECTION;
-    FLOWLOCK_UNLOCK(f);
-
-    SCReturn;
-}
 
 /** \brief Set the No Packet Inspection Flag without locking the flow.
  *
@@ -483,22 +479,6 @@ static inline  void FlowSetNoPacketInspectionFlag(Flow *f)
 
     SCLogDebug("flow %p", f);
     f->flags |= FLOW_NOPACKET_INSPECTION;
-
-    SCReturn;
-}
-
-/** \brief Set the No payload inspection Flag after locking the flow.
- *
- * \param f Flow to set the flag in
- */
-static inline void FlowLockSetNoPayloadInspectionFlag(Flow *f)
-{
-    SCEnter();
-
-    SCLogDebug("flow %p", f);
-    FLOWLOCK_WRLOCK(f);
-    f->flags |= FLOW_NOPAYLOAD_INSPECTION;
-    FLOWLOCK_UNLOCK(f);
 
     SCReturn;
 }
@@ -568,17 +548,25 @@ static inline void FlowDeReference(Flow **d)
     }
 }
 
+/** \brief create a flow id that is as unique as possible
+ *  \retval flow_id signed 64bit id
+ *  \note signed because of the signedness of json_integer_t in
+ *        the json output
+ */
+static inline int64_t FlowGetId(const Flow *f)
+{
+    return (int64_t)f->flow_hash << 31 |
+        (int64_t)(f->startts.tv_sec & 0x0000FFFF) << 16 |
+        (int64_t)(f->startts.tv_usec & 0x0000FFFF);
+}
+
 int FlowClearMemory(Flow *,uint8_t );
 
 AppProto FlowGetAppProtocol(const Flow *f);
 void *FlowGetAppState(const Flow *f);
 uint8_t FlowGetDisruptionFlags(const Flow *f, uint8_t flags);
 
-void FlowHandlePacketUpdateRemove(Flow *f, Packet *p);
 void FlowHandlePacketUpdate(Flow *f, Packet *p);
-
-Flow *FlowGetFlowFromHashByPacket(const Packet *p);
-Flow *FlowLookupFlowFromHash(const Packet *p);
 
 #endif /* __FLOW_H__ */
 

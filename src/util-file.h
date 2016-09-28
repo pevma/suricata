@@ -29,15 +29,24 @@
 #include <sechash.h>
 #endif
 
-#define FILE_TRUNCATED  0x0001
-#define FILE_NOMAGIC    0x0002
-#define FILE_NOMD5      0x0004
-#define FILE_MD5        0x0008
-#define FILE_LOGGED     0x0010
-#define FILE_NOSTORE    0x0020
-#define FILE_STORE      0x0040
-#define FILE_STORED     0x0080
-#define FILE_NOTRACK    0x0100 /**< track size of file */
+#include "conf.h"
+
+#include "util-streaming-buffer.h"
+
+#define FILE_TRUNCATED  BIT_U16(0)
+#define FILE_NOMAGIC    BIT_U16(1)
+#define FILE_NOMD5      BIT_U16(2)
+#define FILE_MD5        BIT_U16(3)
+#define FILE_NOSHA1     BIT_U16(4)
+#define FILE_SHA1       BIT_U16(5)
+#define FILE_NOSHA256   BIT_U16(6)
+#define FILE_SHA256     BIT_U16(7)
+#define FILE_LOGGED     BIT_U16(8)
+#define FILE_NOSTORE    BIT_U16(9)
+#define FILE_STORE      BIT_U16(10)
+#define FILE_STORED     BIT_U16(11)
+#define FILE_NOTRACK    BIT_U16(12) /**< track size of file */
+#define FILE_USE_DETECT BIT_U16(13) /**< use content_inspected tracker */
 
 typedef enum FileState_ {
     FILE_STATE_NONE = 0,    /**< no state */
@@ -50,37 +59,27 @@ typedef enum FileState_ {
     FILE_STATE_MAX
 } FileState;
 
-typedef struct FileData_ {
-    uint8_t *data;
-    uint32_t len;
-    uint64_t stream_offset;
-    int stored;     /* true if this chunk has been stored already
-                     * false otherwise */
-    struct FileData_ *next;
-} FileData;
-
 typedef struct File_ {
     uint16_t flags;
+    uint16_t name_len;
+    int16_t state;
+    StreamingBuffer *sb;
     uint64_t txid;                  /**< tx this file is part of */
     uint32_t file_id;
     uint8_t *name;
-    uint16_t name_len;
-    int16_t state;
-    uint64_t size;                  /**< size tracked so far */
     char *magic;
-    FileData *chunks_head;
-    FileData *chunks_tail;
     struct File_ *next;
 #ifdef HAVE_NSS
     HASHContext *md5_ctx;
     uint8_t md5[MD5_LENGTH];
+    HASHContext *sha1_ctx;
+    uint8_t sha1[SHA1_LENGTH];
+    HASHContext *sha256_ctx;
+    uint8_t sha256[SHA256_LENGTH];
 #endif
-#ifdef DEBUG
-    uint64_t chunks_cnt;
-    uint64_t chunks_cnt_max;
-#endif
-    uint64_t content_len_so_far;
-    uint64_t content_inspected;
+    uint64_t content_inspected;     /**< used in pruning if FILE_USE_DETECT
+                                     *   flag is set */
+    uint64_t content_stored;
 } File;
 
 typedef struct FileContainer_ {
@@ -99,6 +98,7 @@ void FileContainerAdd(FileContainer *, File *);
  *  \brief Open a new File
  *
  *  \param ffc flow container
+ *  \param sbcfg buffer config
  *  \param name filename character array
  *  \param name_len filename len
  *  \param data initial data
@@ -108,9 +108,16 @@ void FileContainerAdd(FileContainer *, File *);
  *  \retval ff flowfile object
  *
  *  \note filename is not a string, so it's not nul terminated.
+ *
+ *  If flags contains the FILE_USE_DETECT bit, the pruning code will
+ *  consider not just the content_stored tracker, but also content_inspected.
+ *  It's the responsibility of the API user to make sure this tracker is
+ *  properly updated.
  */
-File *FileOpenFile(FileContainer *, uint8_t *name, uint16_t name_len,
-        uint8_t *data, uint32_t data_len, uint8_t flags);
+File *FileOpenFile(FileContainer *, const StreamingBufferConfig *,
+        const uint8_t *name, uint16_t name_len,
+        const uint8_t *data, uint32_t data_len, uint16_t flags);
+
 /**
  *  \brief Close a File
  *
@@ -122,7 +129,8 @@ File *FileOpenFile(FileContainer *, uint8_t *name, uint16_t name_len,
  *  \retval 0 ok
  *  \retval -1 error
  */
-int FileCloseFile(FileContainer *, uint8_t *data, uint32_t data_len, uint8_t flags);
+int FileCloseFile(FileContainer *, const uint8_t *data, uint32_t data_len,
+        uint16_t flags);
 
 /**
  *  \brief Store a chunk of file data in the flow. The open "flowfile"
@@ -135,7 +143,7 @@ int FileCloseFile(FileContainer *, uint8_t *data, uint32_t data_len, uint8_t fla
  *  \retval 0 ok
  *  \retval -1 error
  */
-int FileAppendData(FileContainer *, uint8_t *data, uint32_t data_len);
+int FileAppendData(FileContainer *, const uint8_t *data, uint32_t data_len);
 
 /**
  *  \brief Tag a file for storing
@@ -183,6 +191,16 @@ void FileDisableMd5(Flow *f, uint8_t);
 void FileForceMd5Enable(void);
 int FileForceMd5(void);
 
+void FileDisableSha1(Flow *f, uint8_t);
+void FileForceSha1Enable(void);
+int FileForceSha1(void);
+
+void FileDisableSha256(Flow *f, uint8_t);
+void FileForceSha256Enable(void);
+int FileForceSha256(void);
+
+void FileForceHashParseCfg(ConfNode *);
+
 void FileForceTrackingEnable(void);
 
 void FileStoreAllFiles(FileContainer *);
@@ -190,5 +208,9 @@ void FileStoreAllFilesForTx(FileContainer *, uint64_t);
 void FileStoreFileById(FileContainer *fc, uint32_t);
 
 void FileTruncateAllOpenFiles(FileContainer *);
+
+uint64_t FileSize(const File *file);
+
+uint16_t FileFlowToFlags(const Flow *flow, uint8_t direction);
 
 #endif /* __UTIL_FILE_H__ */

@@ -380,15 +380,17 @@ static int DetectEngineInspectModbusTest01(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&tv, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_MODBUS, STREAM_TOSERVER,
-                                readWriteMultipleRegistersReq, sizeof(readWriteMultipleRegistersReq));
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_MODBUS,
+                                STREAM_TOSERVER,
+                                readWriteMultipleRegistersReq,
+                                sizeof(readWriteMultipleRegistersReq));
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     ModbusState    *modbus_state = f.alstate;
     if (modbus_state == NULL) {
@@ -470,14 +472,16 @@ static int DetectEngineInspectModbusTest02(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&tv, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_MODBUS, STREAM_TOSERVER, forceListenOnlyMode, sizeof(forceListenOnlyMode));
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_MODBUS,
+                                STREAM_TOSERVER, forceListenOnlyMode,
+                                sizeof(forceListenOnlyMode));
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     ModbusState    *modbus_state = f.alstate;
     if (modbus_state == NULL) {
@@ -559,15 +563,17 @@ static int DetectEngineInspectModbusTest03(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&tv, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_MODBUS, STREAM_TOSERVER,
-                        encapsulatedInterfaceTransport, sizeof(encapsulatedInterfaceTransport));
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_MODBUS,
+                                STREAM_TOSERVER,
+                                encapsulatedInterfaceTransport,
+                                sizeof(encapsulatedInterfaceTransport));
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     ModbusState    *modbus_state = f.alstate;
     if (modbus_state == NULL) {
@@ -649,14 +655,16 @@ static int DetectEngineInspectModbusTest04(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&tv, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_MODBUS, STREAM_TOSERVER, unassigned, sizeof(unassigned));
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_MODBUS,
+                                STREAM_TOSERVER, unassigned,
+                                sizeof(unassigned));
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     ModbusState    *modbus_state = f.alstate;
     if (modbus_state == NULL) {
@@ -738,15 +746,16 @@ static int DetectEngineInspectModbusTest05(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&tv, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_MODBUS, STREAM_TOSERVER,
-                                    readCoilsReq, sizeof(readCoilsReq));
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_MODBUS,
+                                STREAM_TOSERVER, readCoilsReq,
+                                sizeof(readCoilsReq));
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     ModbusState    *modbus_state = f.alstate;
     if (modbus_state == NULL) {
@@ -828,15 +837,16 @@ static int DetectEngineInspectModbusTest06(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&tv, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_MODBUS, STREAM_TOSERVER,
-                                readInputsRegistersReq, sizeof(readInputsRegistersReq));
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_MODBUS,
+                                STREAM_TOSERVER, readInputsRegistersReq,
+                                sizeof(readInputsRegistersReq));
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     ModbusState *modbus_state = f.alstate;
     if (modbus_state == NULL) {
@@ -918,14 +928,16 @@ static int DetectEngineInspectModbusTest07(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&tv, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_MODBUS, STREAM_TOSERVER, readCoilsReq, sizeof(readCoilsReq));
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_MODBUS,
+                                STREAM_TOSERVER, readCoilsReq,
+                                sizeof(readCoilsReq));
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     ModbusState    *modbus_state = f.alstate;
     if (modbus_state == NULL) {
@@ -1055,15 +1067,16 @@ static int DetectEngineInspectModbusTest08(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&tv, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_MODBUS, STREAM_TOSERVER,
-                                readInputsRegistersReq, sizeof(readInputsRegistersReq));
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_MODBUS,
+                                STREAM_TOSERVER, readInputsRegistersReq,
+                                sizeof(readInputsRegistersReq));
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     ModbusState    *modbus_state = f.alstate;
     if (modbus_state == NULL) {
@@ -1240,15 +1253,17 @@ static int DetectEngineInspectModbusTest09(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&tv, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_MODBUS, STREAM_TOSERVER,
-                                    readWriteMultipleRegistersReq, sizeof(readWriteMultipleRegistersReq));
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_MODBUS,
+                                STREAM_TOSERVER,
+                                readWriteMultipleRegistersReq,
+                                sizeof(readWriteMultipleRegistersReq));
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     ModbusState    *modbus_state = f.alstate;
     if (modbus_state == NULL) {
@@ -1331,15 +1346,24 @@ end:
 void DetectEngineInspectModbusRegisterTests(void)
 {
 #ifdef UNITTESTS
-    UtRegisterTest("DetectEngineInspectModbusTest01 - Code function", DetectEngineInspectModbusTest01, 1);
-    UtRegisterTest("DetectEngineInspectModbusTest02 - code function and code subfunction", DetectEngineInspectModbusTest02, 1);
-    UtRegisterTest("DetectEngineInspectModbusTest03 - Function category", DetectEngineInspectModbusTest03, 1);
-    UtRegisterTest("DetectEngineInspectModbusTest04 - Negative function category", DetectEngineInspectModbusTest04, 1);
-    UtRegisterTest("DetectEngineInspectModbusTest05 - Access type", DetectEngineInspectModbusTest05, 1);
-    UtRegisterTest("DetectEngineInspectModbusTest06 - Access function", DetectEngineInspectModbusTest06, 1);
-    UtRegisterTest("DetectEngineInspectModbusTest07 - Read access at an address", DetectEngineInspectModbusTest07, 1);
-    UtRegisterTest("DetectEngineInspectModbusTest08 - Read access at a range of address", DetectEngineInspectModbusTest08, 1);
-    UtRegisterTest("DetectEngineInspectModbusTest09 - Write access at an address a range of value", DetectEngineInspectModbusTest09, 1);
+    UtRegisterTest("DetectEngineInspectModbusTest01 - Code function",
+                   DetectEngineInspectModbusTest01);
+    UtRegisterTest("DetectEngineInspectModbusTest02 - code function and code subfunction",
+                   DetectEngineInspectModbusTest02);
+    UtRegisterTest("DetectEngineInspectModbusTest03 - Function category",
+                   DetectEngineInspectModbusTest03);
+    UtRegisterTest("DetectEngineInspectModbusTest04 - Negative function category",
+                   DetectEngineInspectModbusTest04);
+    UtRegisterTest("DetectEngineInspectModbusTest05 - Access type",
+                   DetectEngineInspectModbusTest05);
+    UtRegisterTest("DetectEngineInspectModbusTest06 - Access function",
+                   DetectEngineInspectModbusTest06);
+    UtRegisterTest("DetectEngineInspectModbusTest07 - Read access at an address",
+                   DetectEngineInspectModbusTest07);
+    UtRegisterTest("DetectEngineInspectModbusTest08 - Read access at a range of address",
+                   DetectEngineInspectModbusTest08);
+    UtRegisterTest("DetectEngineInspectModbusTest09 - Write access at an address a range of value",
+                   DetectEngineInspectModbusTest09);
 #endif /* UNITTESTS */
     return;
 }

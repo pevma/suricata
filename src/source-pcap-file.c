@@ -1,4 +1,4 @@
-/* Copyright (C) 2007-2014 Open Information Security Foundation
+/* Copyright (C) 2007-2016 Open Information Security Foundation
  *
  * You can copy, redistribute or modify this Program under the terms of
  * the GNU General Public License version 2 as published by the Free
@@ -59,11 +59,9 @@
 
 extern int max_pending_packets;
 
-//static int pcap_max_read_packets = 0;
-
 typedef struct PcapFileGlobalVars_ {
     pcap_t *pcap_handle;
-    int (*Decoder)(ThreadVars *, DecodeThreadVars *, Packet *, u_int8_t *, u_int16_t, PacketQueue *);
+    int (*Decoder)(ThreadVars *, DecodeThreadVars *, Packet *, uint8_t *, uint16_t, PacketQueue *);
     int datalink;
     struct bpf_program filter;
     uint64_t cnt; /** packet counter */
@@ -72,9 +70,6 @@ typedef struct PcapFileGlobalVars_ {
     SC_ATOMIC_DECLARE(unsigned int, invalid_checksums);
 
 } PcapFileGlobalVars;
-
-/** max packets < 65536 */
-//#define PCAP_FILE_MAX_PKTS 256
 
 typedef struct PcapFileThreadVars_
 {
@@ -108,12 +103,11 @@ TmEcode DecodePcapFileThreadDeinit(ThreadVars *tv, void *data);
 
 void TmModuleReceivePcapFileRegister (void)
 {
-    memset(&pcap_g, 0x00, sizeof(pcap_g));
-
     tmm_modules[TMM_RECEIVEPCAPFILE].name = "ReceivePcapFile";
     tmm_modules[TMM_RECEIVEPCAPFILE].ThreadInit = ReceivePcapFileThreadInit;
     tmm_modules[TMM_RECEIVEPCAPFILE].Func = NULL;
     tmm_modules[TMM_RECEIVEPCAPFILE].PktAcqLoop = ReceivePcapFileLoop;
+    tmm_modules[TMM_RECEIVEPCAPFILE].PktAcqBreakLoop = NULL;
     tmm_modules[TMM_RECEIVEPCAPFILE].ThreadExitPrintStats = ReceivePcapFileThreadExitStats;
     tmm_modules[TMM_RECEIVEPCAPFILE].ThreadDeinit = ReceivePcapFileThreadDeinit;
     tmm_modules[TMM_RECEIVEPCAPFILE].RegisterTests = NULL;
@@ -135,6 +129,7 @@ void TmModuleDecodePcapFileRegister (void)
 
 void PcapFileGlobalInit()
 {
+    memset(&pcap_g, 0x00, sizeof(pcap_g));
     SC_ATOMIC_INIT(pcap_g.invalid_checksums);
 }
 
@@ -204,7 +199,7 @@ TmEcode ReceivePcapFileLoop(ThreadVars *tv, void *data, void *slot)
     ptv->cb_result = TM_ECODE_OK;
 
     while (1) {
-        if (suricata_ctl_flags & (SURICATA_STOP | SURICATA_KILL)) {
+        if (suricata_ctl_flags & SURICATA_STOP) {
             SCReturnInt(TM_ECODE_OK);
         }
 
@@ -218,10 +213,11 @@ TmEcode ReceivePcapFileLoop(ThreadVars *tv, void *data, void *slot)
         if (unlikely(r == -1)) {
             SCLogError(SC_ERR_PCAP_DISPATCH, "error code %" PRId32 " %s",
                        r, pcap_geterr(pcap_g.pcap_handle));
-            if (! RunModeUnixSocketIsActive()) {
-                /* in the error state we just kill the engine */
-                EngineKill();
+            if (ptv->cb_result == TM_ECODE_FAILED) {
                 SCReturnInt(TM_ECODE_FAILED);
+            }
+            if (! RunModeUnixSocketIsActive()) {
+                EngineStop();
             } else {
                 pcap_close(pcap_g.pcap_handle);
                 pcap_g.pcap_handle = NULL;
@@ -242,7 +238,6 @@ TmEcode ReceivePcapFileLoop(ThreadVars *tv, void *data, void *slot)
         } else if (ptv->cb_result == TM_ECODE_FAILED) {
             SCLogError(SC_ERR_PCAP_DISPATCH, "Pcap callback PcapFileCallbackLoop failed");
             if (! RunModeUnixSocketIsActive()) {
-                EngineKill();
                 SCReturnInt(TM_ECODE_FAILED);
             } else {
                 pcap_close(pcap_g.pcap_handle);
@@ -260,8 +255,10 @@ TmEcode ReceivePcapFileLoop(ThreadVars *tv, void *data, void *slot)
 TmEcode ReceivePcapFileThreadInit(ThreadVars *tv, void *initdata, void **data)
 {
     SCEnter();
+
     char *tmpbpfstring = NULL;
     char *tmpstring = NULL;
+
     if (initdata == NULL) {
         SCLogError(SC_ERR_INVALID_ARGUMENT, "error: initdata == NULL");
         SCReturnInt(TM_ECODE_FAILED);
@@ -302,14 +299,15 @@ TmEcode ReceivePcapFileThreadInit(ThreadVars *tv, void *initdata, void **data)
     } else {
         SCLogInfo("using bpf-filter \"%s\"", tmpbpfstring);
 
-        if(pcap_compile(pcap_g.pcap_handle,&pcap_g.filter,tmpbpfstring,1,0) < 0) {
-            SCLogError(SC_ERR_BPF,"bpf compilation error %s",pcap_geterr(pcap_g.pcap_handle));
+        if (pcap_compile(pcap_g.pcap_handle, &pcap_g.filter, tmpbpfstring, 1, 0) < 0) {
+            SCLogError(SC_ERR_BPF,"bpf compilation error %s",
+                    pcap_geterr(pcap_g.pcap_handle));
             SCFree(ptv);
             return TM_ECODE_FAILED;
         }
 
-        if(pcap_setfilter(pcap_g.pcap_handle,&pcap_g.filter) < 0) {
-            SCLogError(SC_ERR_BPF,"could not set bpf filter %s",pcap_geterr(pcap_g.pcap_handle));
+        if (pcap_setfilter(pcap_g.pcap_handle, &pcap_g.filter) < 0) {
+            SCLogError(SC_ERR_BPF,"could not set bpf filter %s", pcap_geterr(pcap_g.pcap_handle));
             SCFree(ptv);
             return TM_ECODE_FAILED;
         }
@@ -318,7 +316,7 @@ TmEcode ReceivePcapFileThreadInit(ThreadVars *tv, void *initdata, void **data)
     pcap_g.datalink = pcap_datalink(pcap_g.pcap_handle);
     SCLogDebug("datalink %" PRId32 "", pcap_g.datalink);
 
-    switch(pcap_g.datalink) {
+    switch (pcap_g.datalink) {
         case LINKTYPE_LINUX_SLL:
             pcap_g.Decoder = DecodeSll;
             break;
@@ -354,9 +352,9 @@ TmEcode ReceivePcapFileThreadInit(ThreadVars *tv, void *initdata, void **data)
     } else {
         if (strcmp(tmpstring, "auto") == 0) {
             pcap_g.conf_checksum_mode = CHECKSUM_VALIDATION_AUTO;
-        } else if (strcmp(tmpstring, "yes") == 0) {
+        } else if (ConfValIsTrue(tmpstring)){
             pcap_g.conf_checksum_mode = CHECKSUM_VALIDATION_ENABLE;
-        } else if (strcmp(tmpstring, "no") == 0) {
+        } else if (ConfValIsFalse(tmpstring)) {
             pcap_g.conf_checksum_mode = CHECKSUM_VALIDATION_DISABLE;
         }
     }
@@ -421,10 +419,6 @@ TmEcode DecodePcapFile(ThreadVars *tv, Packet *p, void *data, PacketQueue *pq, P
         prev_signaled_ts = curr_ts;
         FlowWakeupFlowManagerThread();
     }
-
-    /* update the engine time representation based on the timestamp
-     * of the packet. */
-    TimeSet(&p->ts);
 
     /* call the decoder */
     pcap_g.Decoder(tv, dtv, p, GET_PKT_DATA(p), GET_PKT_LEN(p), pq);

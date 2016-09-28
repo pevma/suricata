@@ -81,7 +81,9 @@ extern int profiling_output_to_file;
 int profiling_rules_enabled = 0;
 static char *profiling_file_name = "";
 static const char *profiling_file_mode = "a";
+#ifdef HAVE_LIBJANSSON
 static int profiling_rule_json = 0;
+#endif
 
 /**
  * Sort orders for dumping profiled rules.
@@ -334,7 +336,7 @@ static void DumpJson(FILE *fp, SCProfileSummary *summary, uint32_t count, uint64
             double percent = (long double)summary[i].ticks /
                 (long double)total_ticks * 100;
             json_object_set_new(jsm, "percent", json_integer(percent));
-            json_array_append(jsa, jsm);
+            json_array_append_new(jsa, jsm);
         }
     }
     json_object_set_new(js, "rules", jsa);
@@ -447,7 +449,7 @@ SCProfilingRuleDump(SCProfileDetectCtx *rules_ctx)
     uint32_t count = rules_ctx->size;
     uint64_t total_ticks = 0;
 
-    SCLogInfo("Dumping profiling data for %u rules.", count);
+    SCLogPerf("Dumping profiling data for %u rules.", count);
 
     memset(summary, 0, summary_size);
     for (i = 0; i < count; i++) {
@@ -520,7 +522,7 @@ SCProfilingRuleDump(SCProfileDetectCtx *rules_ctx)
     if (fp != stdout)
         fclose(fp);
     SCFree(summary);
-    SCLogInfo("Done dumping profiling data.");
+    SCLogPerf("Done dumping profiling data.");
 }
 
 /**
@@ -667,7 +669,7 @@ SCProfilingRuleInitCounters(DetectEngineCtx *de_ctx)
         }
     }
 
-    SCLogInfo("Registered %"PRIu32" rule profiling counters.", count);
+    SCLogPerf("Registered %"PRIu32" rule profiling counters.", count);
 }
 
 #endif /* PROFILING */

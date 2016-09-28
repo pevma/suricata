@@ -42,8 +42,6 @@
 #include "alert-unified2-alert.h"
 #include "decode-ipv4.h"
 
-#include "flow.h"
-
 #include "host.h"
 #include "util-profiling.h"
 #include "decode.h"
@@ -61,7 +59,6 @@
 #include "app-layer-htp-xff.h"
 
 #include "output.h"
-#include "alert-unified2-alert.h"
 #include "util-privs.h"
 
 #include "stream.h"
@@ -236,19 +233,12 @@ int Unified2Logger(ThreadVars *tv, void *data, const Packet *p);
 
 #define MODULE_NAME "Unified2Alert"
 
-void TmModuleUnified2AlertRegister(void)
+void Unified2AlertRegister(void)
 {
-    tmm_modules[TMM_ALERTUNIFIED2ALERT].name = MODULE_NAME;
-    tmm_modules[TMM_ALERTUNIFIED2ALERT].ThreadInit = Unified2AlertThreadInit;
-//    tmm_modules[TMM_ALERTUNIFIED2ALERT].Func = Unified2Alert;
-    tmm_modules[TMM_ALERTUNIFIED2ALERT].ThreadDeinit = Unified2AlertThreadDeinit;
-    tmm_modules[TMM_ALERTUNIFIED2ALERT].RegisterTests = Unified2RegisterTests;
-    tmm_modules[TMM_ALERTUNIFIED2ALERT].cap_flags = 0;
-    tmm_modules[TMM_ALERTUNIFIED2ALERT].flags = TM_FLAG_LOGAPI_TM;
-
-    //OutputRegisterModule(MODULE_NAME, "unified2-alert", Unified2AlertInitCtx);
-    OutputRegisterPacketModule(MODULE_NAME, "unified2-alert",
-            Unified2AlertInitCtx, Unified2Logger, Unified2Condition);
+    OutputRegisterPacketModule(LOGGER_UNIFIED2, MODULE_NAME, "unified2-alert",
+        Unified2AlertInitCtx, Unified2Logger, Unified2Condition,
+        Unified2AlertThreadInit, Unified2AlertThreadDeinit, NULL);
+    Unified2RegisterTests();
 }
 
 /**
@@ -341,11 +331,9 @@ int Unified2Logger(ThreadVars *t, void *data, const Packet *p)
         char buffer[XFF_MAXLEN];
         int have_xff_ip = 0;
 
-        FLOWLOCK_RDLOCK(p->flow);
         if (FlowGetAppProtocol(p->flow) == ALPROTO_HTTP) {
             have_xff_ip = HttpXFFGetIP(p, xff_cfg, buffer, XFF_MAXLEN);
         }
-        FLOWLOCK_UNLOCK(p->flow);
 
         if (have_xff_ip) {
             /** Be sure that we have a nice zeroed buffer */
@@ -518,7 +506,6 @@ static int Unified2PrintStreamSegmentCallback(const Packet *p, void *data, uint8
     int ethh_offset = 0;
     EthernetHdr ethhdr = { {0,0,0,0,0,0}, {0,0,0,0,0,0}, htons(ETHERNET_TYPE_IPV6) };
     uint32_t hdr_length = 0;
-    int datalink = p->datalink;
 
     memset(hdr, 0, sizeof(Unified2AlertFileHeader));
     memset(phdr, 0, sizeof(Unified2Packet));
@@ -527,7 +514,7 @@ static int Unified2PrintStreamSegmentCallback(const Packet *p, void *data, uint8
     aun->hdr = hdr;
 
     phdr->sensor_id = htonl(sensor_id);
-    phdr->linktype = htonl(datalink);
+    phdr->linktype = htonl(p->datalink);
     phdr->event_id = aun->event_id;
     phdr->event_second = phdr->packet_second = htonl(p->ts.tv_sec);
     phdr->packet_microsecond = htonl(p->ts.tv_usec);
@@ -536,7 +523,6 @@ static int Unified2PrintStreamSegmentCallback(const Packet *p, void *data, uint8
     if (p->datalink != DLT_EN10MB) {
         /* We have raw data here */
         phdr->linktype = htonl(DLT_RAW);
-        datalink = DLT_RAW;
     }
 
     aun->length += sizeof(Unified2AlertFileHeader) + UNIFIED2_PACKET_SIZE;
@@ -550,8 +536,7 @@ static int Unified2PrintStreamSegmentCallback(const Packet *p, void *data, uint8
         if (p->datalink == DLT_EN10MB) {
             /* Fake this */
             ethh_offset = 14;
-            datalink = DLT_EN10MB;
-            phdr->linktype = htonl(datalink);
+            phdr->linktype = htonl(DLT_EN10MB);
             aun->length += ethh_offset;
 
             if (aun->length > aun->datalen) {
@@ -593,8 +578,7 @@ static int Unified2PrintStreamSegmentCallback(const Packet *p, void *data, uint8
         if (p->datalink == DLT_EN10MB) {
             /* Fake this */
             ethh_offset = 14;
-            datalink = DLT_EN10MB;
-            phdr->linktype = htonl(datalink);
+            phdr->linktype = htonl(DLT_EN10MB);
             aun->length += ethh_offset;
             if (aun->length > aun->datalen) {
                 SCLogError(SC_ERR_INVALID_VALUE, "len is too big for thread data");
@@ -904,7 +888,6 @@ static int Unified2IPv6TypeAlert(ThreadVars *t, const Packet *p, void *data)
             char buffer[XFF_MAXLEN];
             int have_xff_ip = 0;
 
-            FLOWLOCK_RDLOCK(p->flow);
             if (FlowGetAppProtocol(p->flow) == ALPROTO_HTTP) {
                 if (pa->flags & PACKET_ALERT_FLAG_TX) {
                     have_xff_ip = HttpXFFGetIPFromTx(p, pa->tx_id, xff_cfg, buffer, XFF_MAXLEN);
@@ -912,7 +895,6 @@ static int Unified2IPv6TypeAlert(ThreadVars *t, const Packet *p, void *data)
                     have_xff_ip = HttpXFFGetIP(p, xff_cfg, buffer, XFF_MAXLEN);
                 }
             }
-            FLOWLOCK_UNLOCK(p->flow);
 
             if (have_xff_ip) {
                 memset(aun->xff_ip, 0, 4 * sizeof(uint32_t));
@@ -1081,7 +1063,6 @@ static int Unified2IPv4TypeAlert (ThreadVars *tv, const Packet *p, void *data)
             char buffer[XFF_MAXLEN];
             int have_xff_ip = 0;
 
-            FLOWLOCK_RDLOCK(p->flow);
             if (FlowGetAppProtocol(p->flow) == ALPROTO_HTTP) {
                 if (pa->flags & PACKET_ALERT_FLAG_TX) {
                     have_xff_ip = HttpXFFGetIPFromTx(p, pa->tx_id, xff_cfg, buffer, XFF_MAXLEN);
@@ -1089,7 +1070,6 @@ static int Unified2IPv4TypeAlert (ThreadVars *tv, const Packet *p, void *data)
                     have_xff_ip = HttpXFFGetIP(p, xff_cfg, buffer, XFF_MAXLEN);
                 }
             }
-            FLOWLOCK_UNLOCK(p->flow);
 
             if (have_xff_ip) {
                 memset(aun->xff_ip, 0, 4 * sizeof(uint32_t));
@@ -1180,7 +1160,7 @@ TmEcode Unified2AlertThreadInit(ThreadVars *t, void *initdata, void **data)
     memset(aun, 0, sizeof(Unified2AlertThread));
     if(initdata == NULL)
     {
-        SCLogDebug("Error getting context for Unified2Alert.  \"initdata\" argument NULL");
+        SCLogDebug("Error getting context for AlertUnified2.  \"initdata\" argument NULL");
         SCFree(aun);
         return TM_ECODE_FAILED;
     }
@@ -1218,8 +1198,8 @@ TmEcode Unified2AlertThreadDeinit(ThreadVars *t, void *data)
     }
 
     if (!(aun->unified2alert_ctx->file_ctx->flags & LOGFILE_ALERTS_PRINTED)) {
-        SCLogInfo("Alert unified2 module wrote %"PRIu64" alerts",
-                aun->unified2alert_ctx->file_ctx->alerts);
+        //SCLogInfo("Alert unified2 module wrote %"PRIu64" alerts",
+        //        aun->unified2alert_ctx->file_ctx->alerts);
 
         /* Do not print it for each thread */
         aun->unified2alert_ctx->file_ctx->flags |= LOGFILE_ALERTS_PRINTED;
@@ -1971,11 +1951,12 @@ error:
 void Unified2RegisterTests(void)
 {
 #ifdef UNITTESTS
-    UtRegisterTest("Unified2Test01 -- Ipv4 test", Unified2Test01, 1);
-    UtRegisterTest("Unified2Test02 -- Ipv6 test", Unified2Test02, 1);
-    UtRegisterTest("Unified2Test03 -- GRE test", Unified2Test03, 1);
-    UtRegisterTest("Unified2Test04 -- PPP test", Unified2Test04, 1);
-    UtRegisterTest("Unified2Test05 -- Inline test", Unified2Test05, 1);
-    UtRegisterTest("Unified2TestRotate01 -- Rotate File", Unified2TestRotate01, 1);
+    UtRegisterTest("Unified2Test01 -- Ipv4 test", Unified2Test01);
+    UtRegisterTest("Unified2Test02 -- Ipv6 test", Unified2Test02);
+    UtRegisterTest("Unified2Test03 -- GRE test", Unified2Test03);
+    UtRegisterTest("Unified2Test04 -- PPP test", Unified2Test04);
+    UtRegisterTest("Unified2Test05 -- Inline test", Unified2Test05);
+    UtRegisterTest("Unified2TestRotate01 -- Rotate File",
+                   Unified2TestRotate01);
 #endif /* UNITTESTS */
 }

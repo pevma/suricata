@@ -20,7 +20,7 @@
  *
  * \author Tom DeCanio <td@npulsetech.com>
  *
- * Logs alerts in JSON format.
+ * Logs detection and monitoring events in JSON format.
  *
  */
 
@@ -38,7 +38,6 @@
 #include "util-unittest.h"
 #include "util-unittest-helper.h"
 
-#include "detect.h"
 #include "detect-parse.h"
 #include "detect-engine.h"
 #include "detect-engine-mpm.h"
@@ -66,45 +65,11 @@
  *
  */
 
-TmEcode OutputJson (ThreadVars *, Packet *, void *, PacketQueue *, PacketQueue *);
-TmEcode OutputJsonThreadInit(ThreadVars *, void *, void **);
-TmEcode OutputJsonThreadDeinit(ThreadVars *, void *);
 int OutputJsonOpenFileCtx(LogFileCtx *, char *);
-void OutputJsonRegisterTests(void);
 
-void TmModuleOutputJsonRegister (void)
+void OutputJsonRegister (void)
 {
-    tmm_modules[TMM_OUTPUTJSON].name = "OutputJSON";
-    tmm_modules[TMM_OUTPUTJSON].ThreadInit = OutputJsonThreadInit;
-    tmm_modules[TMM_OUTPUTJSON].Func = OutputJson;
-    tmm_modules[TMM_OUTPUTJSON].ThreadDeinit = OutputJsonThreadDeinit;
-    tmm_modules[TMM_OUTPUTJSON].RegisterTests = OutputJsonRegisterTests;
-}
-
-OutputCtx *OutputJsonInitCtx(ConfNode *conf)
-{
-    SCLogDebug("Can't init JSON output - JSON support was disabled during build.");
-    return NULL;
-}
-
-TmEcode OutputJsonThreadInit(ThreadVars *t, void *initdata, void **data)
-{
-    SCLogDebug("Can't init JSON output thread - JSON support was disabled during build.");
-    return TM_ECODE_FAILED;
-}
-
-TmEcode OutputJson (ThreadVars *tv, Packet *p, void *data, PacketQueue *pq, PacketQueue *postpq)
-{
-    return TM_ECODE_OK;
-}
-
-TmEcode OutputJsonThreadDeinit(ThreadVars *t, void *data)
-{
-    return TM_ECODE_FAILED;
-}
-
-void OutputJsonRegisterTests (void)
-{
+    SCLogDebug("Can't register JSON output - JSON support was disabled during build.");
 }
 
 #else /* implied we do have JSON support */
@@ -117,23 +82,10 @@ void OutputJsonRegisterTests (void)
 
 #define OUTPUT_BUFFER_SIZE 65536
 
-TmEcode OutputJson (ThreadVars *, Packet *, void *, PacketQueue *, PacketQueue *);
-TmEcode OutputJsonThreadInit(ThreadVars *, void *, void **);
-TmEcode OutputJsonThreadDeinit(ThreadVars *, void *);
-void OutputJsonExitPrintStats(ThreadVars *, void *);
-void OutputJsonRegisterTests(void);
 static void OutputJsonDeInitCtx(OutputCtx *);
 
-void TmModuleOutputJsonRegister (void)
+void OutputJsonRegister (void)
 {
-    tmm_modules[TMM_OUTPUTJSON].name = MODULE_NAME;
-    tmm_modules[TMM_OUTPUTJSON].ThreadInit = OutputJsonThreadInit;
-    tmm_modules[TMM_OUTPUTJSON].Func = OutputJson;
-    tmm_modules[TMM_OUTPUTJSON].ThreadExitPrintStats = OutputJsonExitPrintStats;
-    tmm_modules[TMM_OUTPUTJSON].ThreadDeinit = OutputJsonThreadDeinit;
-    tmm_modules[TMM_OUTPUTJSON].RegisterTests = OutputJsonRegisterTests;
-    tmm_modules[TMM_OUTPUTJSON].cap_flags = 0;
-
     OutputRegisterModule(MODULE_NAME, "eve-log", OutputJsonInitCtx);
 }
 
@@ -167,15 +119,15 @@ void CreateJSONFlowId(json_t *js, const Flow *f)
 {
     if (f == NULL)
         return;
-#if __WORDSIZE == 64
-    uint64_t addr = (uint64_t)f;
-#else
-    uint32_t addr = (uint32_t)f;
-#endif
-    json_object_set_new(js, "flow_id", json_integer(addr));
+    int64_t flow_id = FlowGetId(f);
+    /* reduce to 51 bits as Javascript and even JSON often seem to
+     * max out there. */
+    flow_id &= 0x7ffffffffffffLL;
+    json_object_set_new(js, "flow_id", json_integer(flow_id));
 }
 
-json_t *CreateJSONHeader(Packet *p, int direction_sensitive, char *event_type)
+json_t *CreateJSONHeader(const Packet *p, int direction_sensitive,
+                         const char *event_type)
 {
     char timebuf[64];
     char srcip[46], dstip[46];
@@ -321,7 +273,8 @@ json_t *CreateJSONHeader(Packet *p, int direction_sensitive, char *event_type)
     return js;
 }
 
-json_t *CreateJSONHeaderWithTxId(Packet *p, int direction_sensitive, char *event_type, uint32_t tx_id)
+json_t *CreateJSONHeaderWithTxId(const Packet *p, int direction_sensitive,
+                                 const char *event_type, uint64_t tx_id)
 {
     json_t *js = CreateJSONHeader(p, direction_sensitive, event_type);
     if (unlikely(js == NULL))
@@ -370,51 +323,6 @@ int OutputJSONBuffer(json_t *js, LogFileCtx *file_ctx, MemBuffer **buffer)
 
     LogFileWrite(file_ctx, *buffer);
     return 0;
-}
-
-TmEcode OutputJson (ThreadVars *tv, Packet *p, void *data, PacketQueue *pq, PacketQueue *postpq)
-{
-    return TM_ECODE_OK;
-}
-
-TmEcode OutputJsonThreadInit(ThreadVars *t, void *initdata, void **data)
-{
-    AlertJsonThread *aft = SCMalloc(sizeof(AlertJsonThread));
-    if (unlikely(aft == NULL))
-        return TM_ECODE_FAILED;
-    memset(aft, 0, sizeof(AlertJsonThread));
-
-    if(initdata == NULL)
-    {
-        SCLogDebug("Error getting context for AlertJson.  \"initdata\" argument NULL");
-        SCFree(aft);
-        return TM_ECODE_FAILED;
-    }
-
-    *data = (void *)aft;
-    return TM_ECODE_OK;
-}
-
-TmEcode OutputJsonThreadDeinit(ThreadVars *t, void *data)
-{
-    AlertJsonThread *aft = (AlertJsonThread *)data;
-    if (aft == NULL) {
-        return TM_ECODE_OK;
-    }
-
-    SCFree(aft);
-    return TM_ECODE_OK;
-}
-
-void OutputJsonExitPrintStats(ThreadVars *tv, void *data)
-{
-    AlertJsonThread *aft = (AlertJsonThread *)data;
-    if (aft == NULL) {
-        return;
-    }
-
-    SCLogInfo("JSON output wrote %" PRIu64 " alerts", aft->file_ctx->alerts);
-
 }
 
 /**
@@ -621,21 +529,4 @@ static void OutputJsonDeInitCtx(OutputCtx *output_ctx)
     SCFree(output_ctx);
 }
 
-/*------------------------------Unittests-------------------------------------*/
-
-#ifdef UNITTESTS
-
-#endif /* UNITTESTS */
-
-/**
- * \brief This function registers unit tests for AlertFastLog API.
- */
-void OutputJsonRegisterTests(void)
-{
-
-#ifdef UNITTESTS
-
-#endif /* UNITTESTS */
-
-}
 #endif

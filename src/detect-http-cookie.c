@@ -74,7 +74,6 @@ void DetectHttpCookieRegister(void)
     sigmatch_table[DETECT_AL_HTTP_COOKIE].url = "https://redmine.openinfosecfoundation.org/projects/suricata/wiki/HTTP-keywords#http_cookie";
     sigmatch_table[DETECT_AL_HTTP_COOKIE].Match = NULL;
     sigmatch_table[DETECT_AL_HTTP_COOKIE].AppLayerMatch = NULL;
-    sigmatch_table[DETECT_AL_HTTP_COOKIE].alproto = ALPROTO_HTTP;
     sigmatch_table[DETECT_AL_HTTP_COOKIE].Setup = DetectHttpCookieSetup;
     sigmatch_table[DETECT_AL_HTTP_COOKIE].Free  = DetectHttpCookieFree;
     sigmatch_table[DETECT_AL_HTTP_COOKIE].RegisterTests = DetectHttpCookieRegisterTests;
@@ -371,15 +370,16 @@ static int DetectHttpCookieSigTest01(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&th_v, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_HTTP, STREAM_TOSERVER, httpbuf1, httplen1);
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_HTTP,
+                                STREAM_TOSERVER, httpbuf1, httplen1);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
         result = 0;
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     http_state = f.alstate;
     if (http_state == NULL) {
@@ -470,15 +470,16 @@ static int DetectHttpCookieSigTest02(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&th_v, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_HTTP, STREAM_TOSERVER, httpbuf1, httplen1);
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_HTTP,
+                                STREAM_TOSERVER, httpbuf1, httplen1);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
         result = 0;
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     http_state = f.alstate;
     if (http_state == NULL) {
@@ -563,15 +564,16 @@ static int DetectHttpCookieSigTest03(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&th_v, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_HTTP, STREAM_TOSERVER, httpbuf1, httplen1);
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_HTTP,
+                                STREAM_TOSERVER, httpbuf1, httplen1);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
         result = 0;
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     http_state = f.alstate;
     if (http_state == NULL) {
@@ -657,15 +659,16 @@ static int DetectHttpCookieSigTest04(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&th_v, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_HTTP, STREAM_TOSERVER, httpbuf1, httplen1);
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_HTTP,
+                                STREAM_TOSERVER, httpbuf1, httplen1);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
         result = 0;
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     http_state = f.alstate;
     if (http_state == NULL) {
@@ -751,15 +754,16 @@ static int DetectHttpCookieSigTest05(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&th_v, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_HTTP, STREAM_TOSERVER, httpbuf1, httplen1);
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_HTTP,
+                                STREAM_TOSERVER, httpbuf1, httplen1);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
         result = 0;
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     http_state = f.alstate;
     if (http_state == NULL) {
@@ -846,14 +850,15 @@ static int DetectHttpCookieSigTest06(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&th_v, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_HTTP, STREAM_TOSERVER, httpbuf1, httplen1);
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_HTTP,
+                                STREAM_TOSERVER, httpbuf1, httplen1);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     http_state = f.alstate;
     if (http_state == NULL) {
@@ -938,15 +943,16 @@ static int DetectHttpCookieSigTest07(void)
     SigGroupBuild(de_ctx);
     DetectEngineThreadCtxInit(&th_v, (void *)de_ctx, (void *)&det_ctx);
 
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_HTTP, STREAM_TOSERVER, httpbuf1, httplen1);
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_HTTP,
+                                STREAM_TOSERVER, httpbuf1, httplen1);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
         result = 0;
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     http_state = f.alstate;
     if (http_state == NULL) {
@@ -1049,16 +1055,17 @@ static int DetectHttpCookieSigTest08(void)
     DetectEngineThreadCtxInit(&th_v, (void *)de_ctx, (void *)&det_ctx);
 
     /* request */
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_HTTP, STREAM_TOSERVER,
-                                httpbuf_request, httpbuf_request_len);
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_HTTP,
+                                STREAM_TOSERVER, httpbuf_request,
+                                httpbuf_request_len);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
         result = 0;
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     http_state = f.alstate;
     if (http_state == NULL) {
@@ -1073,16 +1080,17 @@ static int DetectHttpCookieSigTest08(void)
     }
 
     /* response */
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_HTTP, STREAM_TOCLIENT,
-                            httpbuf_response, httpbuf_response_len);
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_HTTP,
+                            STREAM_TOCLIENT, httpbuf_response,
+                            httpbuf_response_len);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
         result = 0;
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     /* do detect */
     SigMatchSignatures(&th_v, de_ctx, det_ctx, p2);
@@ -1186,16 +1194,17 @@ static int DetectHttpCookieSigTest09(void)
     DetectEngineThreadCtxInit(&th_v, (void *)de_ctx, (void *)&det_ctx);
 
     /* request */
-    SCMutexLock(&f.m);
-    int r = AppLayerParserParse(alp_tctx, &f, ALPROTO_HTTP, STREAM_TOSERVER,
-                                httpbuf_request, httpbuf_request_len);
+    FLOWLOCK_WRLOCK(&f);
+    int r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_HTTP,
+                                STREAM_TOSERVER, httpbuf_request,
+                                httpbuf_request_len);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
         result = 0;
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     http_state = f.alstate;
     if (http_state == NULL) {
@@ -1210,16 +1219,17 @@ static int DetectHttpCookieSigTest09(void)
     }
 
     /* response */
-    SCMutexLock(&f.m);
-    r = AppLayerParserParse(alp_tctx, &f, ALPROTO_HTTP, STREAM_TOCLIENT,
-                            httpbuf_response, httpbuf_response_len);
+    FLOWLOCK_WRLOCK(&f);
+    r = AppLayerParserParse(NULL, alp_tctx, &f, ALPROTO_HTTP,
+                            STREAM_TOCLIENT, httpbuf_response,
+                            httpbuf_response_len);
     if (r != 0) {
         printf("toserver chunk 1 returned %" PRId32 ", expected 0: ", r);
         result = 0;
-        SCMutexUnlock(&f.m);
+        FLOWLOCK_UNLOCK(&f);
         goto end;
     }
-    SCMutexUnlock(&f.m);
+    FLOWLOCK_UNLOCK(&f);
 
     /* do detect */
     SigMatchSignatures(&th_v, de_ctx, det_ctx, p2);
@@ -1254,21 +1264,21 @@ end:
 void DetectHttpCookieRegisterTests (void)
 {
 #ifdef UNITTESTS /* UNITTESTS */
-    UtRegisterTest("DetectHttpCookieTest01", DetectHttpCookieTest01, 1);
-    UtRegisterTest("DetectHttpCookieTest02", DetectHttpCookieTest02, 1);
-    UtRegisterTest("DetectHttpCookieTest03", DetectHttpCookieTest03, 1);
-    UtRegisterTest("DetectHttpCookieTest04", DetectHttpCookieTest04, 1);
-    UtRegisterTest("DetectHttpCookieTest05", DetectHttpCookieTest05, 1);
-    UtRegisterTest("DetectHttpCookieTest06", DetectHttpCookieTest06, 1);
-    UtRegisterTest("DetectHttpCookieSigTest01", DetectHttpCookieSigTest01, 1);
-    UtRegisterTest("DetectHttpCookieSigTest02", DetectHttpCookieSigTest02, 1);
-    UtRegisterTest("DetectHttpCookieSigTest03", DetectHttpCookieSigTest03, 1);
-    UtRegisterTest("DetectHttpCookieSigTest04", DetectHttpCookieSigTest04, 1);
-    UtRegisterTest("DetectHttpCookieSigTest05", DetectHttpCookieSigTest05, 1);
-    UtRegisterTest("DetectHttpCookieSigTest06", DetectHttpCookieSigTest06, 1);
-    UtRegisterTest("DetectHttpCookieSigTest07", DetectHttpCookieSigTest07, 1);
-    UtRegisterTest("DetectHttpCookieSigTest08", DetectHttpCookieSigTest08, 1);
-    UtRegisterTest("DetectHttpCookieSigTest09", DetectHttpCookieSigTest09, 1);
+    UtRegisterTest("DetectHttpCookieTest01", DetectHttpCookieTest01);
+    UtRegisterTest("DetectHttpCookieTest02", DetectHttpCookieTest02);
+    UtRegisterTest("DetectHttpCookieTest03", DetectHttpCookieTest03);
+    UtRegisterTest("DetectHttpCookieTest04", DetectHttpCookieTest04);
+    UtRegisterTest("DetectHttpCookieTest05", DetectHttpCookieTest05);
+    UtRegisterTest("DetectHttpCookieTest06", DetectHttpCookieTest06);
+    UtRegisterTest("DetectHttpCookieSigTest01", DetectHttpCookieSigTest01);
+    UtRegisterTest("DetectHttpCookieSigTest02", DetectHttpCookieSigTest02);
+    UtRegisterTest("DetectHttpCookieSigTest03", DetectHttpCookieSigTest03);
+    UtRegisterTest("DetectHttpCookieSigTest04", DetectHttpCookieSigTest04);
+    UtRegisterTest("DetectHttpCookieSigTest05", DetectHttpCookieSigTest05);
+    UtRegisterTest("DetectHttpCookieSigTest06", DetectHttpCookieSigTest06);
+    UtRegisterTest("DetectHttpCookieSigTest07", DetectHttpCookieSigTest07);
+    UtRegisterTest("DetectHttpCookieSigTest08", DetectHttpCookieSigTest08);
+    UtRegisterTest("DetectHttpCookieSigTest09", DetectHttpCookieSigTest09);
 #endif /* UNITTESTS */
 
 }

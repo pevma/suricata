@@ -66,6 +66,8 @@
 #include "ippair-bit.h"
 #include "unix-manager.h"
 
+#include "stream-tcp.h"
+
 #include "app-layer-detect-proto.h"
 #include "app-layer-parser.h"
 #include "app-layer.h"
@@ -108,7 +110,7 @@
 #include "util-memrchr.h"
 
 #include "util-mpm-ac.h"
-#include "detect-engine-mpm.h"
+#include "util-mpm-hs.h"
 
 #include "util-decode-asn1.h"
 
@@ -117,6 +119,8 @@
 #include "tmqh-flow.h"
 #include "defrag.h"
 #include "detect-engine-siggroup.h"
+
+#include "util-streaming-buffer.h"
 
 #endif /* UNITTESTS */
 
@@ -151,6 +155,7 @@ void RunUnittests(int list_unittests, char *regex_arg)
 #ifdef __SC_CUDA_SUPPORT__
     MpmCudaEnvironmentSetup();
 #endif
+    SpmTableSetup();
 
     AppLayerSetup();
 
@@ -172,6 +177,8 @@ void RunUnittests(int list_unittests, char *regex_arg)
     SCReferenceConfInit();
     SCClassConfInit();
 
+    UtInitialize();
+
     RegisterAllModules();
 
     DetectEngineRegisterAppInspectionEngines();
@@ -188,8 +195,9 @@ void RunUnittests(int list_unittests, char *regex_arg)
     AppLayerHtpEnableRequestBodyCallback();
     AppLayerHtpNeedFileInspection();
 
-    UtInitialize();
     UTHRegisterTests();
+    StreamTcpRegisterTests();
+    SigRegisterTests();
     SCReputationRegisterTests();
     TmModuleRegisterTests();
     SigTableRegisterTests();
@@ -277,6 +285,8 @@ void RunUnittests(int list_unittests, char *regex_arg)
 #endif
     AppLayerUnittestsRegister();
     MimeDecRegisterTests();
+    StreamingBufferRegisterTests();
+
     if (list_unittests) {
         UtListTests(regex_arg);
     } else {
@@ -288,6 +298,9 @@ void RunUnittests(int list_unittests, char *regex_arg)
         uint32_t failed = UtRunTests(regex_arg);
         PacketPoolDestroy();
         UtCleanup();
+#ifdef BUILD_HYPERSCAN
+        MpmHSGlobalCleanup();
+#endif
 #ifdef __SC_CUDA_SUPPORT__
         if (PatternMatchDefaultMatcher() == MPM_AC_CUDA)
             MpmCudaBufferDeSetup();
